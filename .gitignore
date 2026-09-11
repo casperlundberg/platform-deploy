@@ -1,0 +1,8 @@
+# helm dependency build vendors the service charts here. They are built from
+# the repositories next door, so committing them would mean two copies that
+# drift.
+/charts/autoscale-platform/charts/
+/charts/autoscale-platform/Chart.lock
+
+# Rendered output, for diffing against a cluster.
+/out/

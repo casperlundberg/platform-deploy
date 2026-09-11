@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The umbrella chart depends on three charts that live in the sibling
+      # repositories, so CI has to check them out to lint anything at all.
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/autoscaler, path: ../autoscaler }
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/simlab-api, path: ../simlab-api }
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/simlab-web, path: ../simlab-web }
+
+      - uses: azure/setup-helm@v4
+      - run: make lint
+      - run: make template-all
+
+      # A rendered manifest that is not valid Kubernetes is worth catching
+      # here rather than in an ArgoCD sync failure.
+      - uses: azure/setup-kubectl@v4
+      - run: |
+          for file in out/*.yaml; do
+            kubectl apply --dry-run=client -f "$file" >/dev/null \
+              || { echo "$file is not valid"; exit 1; }
+          done
+
+  script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck verify.sh
