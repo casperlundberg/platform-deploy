@@ -13,6 +13,14 @@
 # Values with no default at all are listed in docs/secrets.md; every one is a
 # credential, and a chart that invented one would ship a well-known secret.
 
+storage:
+  # This project's volumes go on Longhorn, never on local-path, and the render
+  # fails rather than letting a wrong one through. See
+  # templates/validate-storage.yaml for what each failure mode costs.
+  #
+  # False only for a laptop cluster, which has no Longhorn at all.
+  requireLonghorn: true
+
 autoscaler:
   auth:
     # The token guarding the autoscaler's API, and through it every platform

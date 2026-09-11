@@ -53,10 +53,8 @@ manifests to read. Real deployment goes through the infra repo.
 | [`charts/autoscale-platform/`](charts/autoscale-platform) | The umbrella chart. Composes the three service charts, which live with their services. |
 | [`values/`](values) | Per-environment values. `local.yaml` for a laptop cluster, `vikingvault.yaml` filled in with that cluster's real standards. |
 | [`argocd/`](argocd) | An ArgoCD Application, written as the infra repo would need it. A reference, not a deployed object. |
-| [`docs/resources.md`](docs/resources.md) | What each service needs and why. Start here. |
-| [`docs/secrets.md`](docs/secrets.md) | Every credential, what it unlocks, and how to seal it. |
-| [`docs/networking.md`](docs/networking.md) | Ports, who talks to whom, and what must not be buffered. |
-| [`docs/infra-handover.md`](docs/infra-handover.md) | The checklist for the infra repo. |
+| [`docs/requirements.md`](docs/requirements.md) | What the platform needs: resources, constraints, ports, RBAC, credentials. |
+| [`docs/infra-handover.md`](docs/infra-handover.md) | The checklist for the infra repo, with the decisions it has to make. |
 | [`verify.sh`](verify.sh) | Runs the whole platform locally and checks it does what it claims. |
 
 ## Quick start

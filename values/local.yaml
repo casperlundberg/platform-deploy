@@ -4,6 +4,12 @@
 # token is a literal because nothing here is worth protecting. Do not copy this
 # file as the basis for a real environment; copy vikingvault.yaml.
 
+storage:
+  # The Longhorn requirement is waived here, and only here, because a laptop
+  # cluster has no Longhorn to satisfy it with. Every real environment leaves
+  # this true.
+  requireLonghorn: false
+
 autoscaler:
   auth:
     # Fine here and nowhere else.
@@ -11,9 +17,9 @@ autoscaler:
   persistence:
     enabled: true
     size: 1Gi
-    # kind, k3d and minikube all ship a default StorageClass, so an empty value
-    # binds predictably. On a cluster with two defaults marked it does not —
-    # see vikingvault.yaml.
+    # kind, k3d and minikube ship exactly one default StorageClass, so an empty
+    # value binds predictably. On a cluster with two defaults marked it does
+    # not — see vikingvault.yaml.
     storageClassName: ""
   resources:
     requests: { cpu: 50m, memory: 64Mi }

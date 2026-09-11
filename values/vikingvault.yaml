@@ -1,24 +1,16 @@
 # The vikingvault-ts cluster.
 #
-# This file records what that cluster requires. It is a starting point for the
-# infrastructure repository, not a substitute for it: that repository is the
-# GitOps source of truth, and this chart must never be helm-installed here.
-# ArgoCD manages with selfHeal on, so a direct install creates a second owner
-# and gets reverted.
+# Read off the cluster 2026-09-11, not assumed. A starting point for the infra
+# repo, which is the GitOps source of truth — never helm-install this here,
+# ArgoCD manages with selfHeal and would revert it.
 #
-# Every value below was read off the cluster on 2026-09-11, not assumed:
-#
-#   9 nodes; odin-worker-1..4 are the large ones at 6 CPU / 24Gi each
-#   StorageClasses: local-path (default), longhorn-hugin (default),
-#     longhorn, longhorn-single-odin  ← two defaults, hence no implicit choice
-#   longhorn-single-odin: numberOfReplicas 1, reclaimPolicy Delete,
-#     allowVolumeExpansion true, diskSelector single-replica
-#   IngressClass: nginx only, and marked default
-#   sealed-secrets controller in kube-system
-#   40 ArgoCD Applications, none belonging to this project
-#
-# If one of them changes, it changes here and in the infra repo, not in the
-# chart.
+#   StorageClasses: local-path and longhorn-hugin both default (hence no
+#     implicit choice); longhorn-single-odin is 1 replica on one tagged disk,
+#     odin-worker-2/disk-4, reclaimPolicy Delete, no backup target configured
+#   IngressClass: nginx only, and default
+#   sealed-secrets in kube-system
+#   odin-worker-1..4 are 6 CPU / 24Gi; nothing of this project is on the
+#     cluster any more
 
 autoscaler:
   image:
@@ -38,19 +30,20 @@ autoscaler:
     # (local-path and longhorn-hugin), so a PVC with no explicit class binds
     # unpredictably — it is not a "pick the sensible one" situation.
     #
-    # Two properties of this class matter for a volume holding access keys:
-    #   numberOfReplicas: 1 — losing the node loses the volume
-    #   reclaimPolicy: Delete — removing the release destroys it
-    # Either one costs every registered target's credentials, which then have
-    # to be re-entered. That is recoverable but not free; see
-    # docs/resources.md.
+    # Longhorn only — the chart refuses anything else, and refuses an unset
+    # value too. See charts/autoscale-platform/templates/validate-storage.yaml.
+    #
+    # This class is one replica on one tagged disk (odin-worker-2/disk-4), with
+    # no backup target configured, so a node or disk failure loses it. On this
+    # volume that costs re-entering each target's access keys; no run data is
+    # here. docs/infra-handover.md has the two ways to change that without
+    # leaving Longhorn.
     storageClassName: longhorn-single-odin
 
   rbac:
     create: true
-    # The namespaces this autoscaler may create and scale Deployments in.
-    # Left empty it can only act in its own, which is the right default and
-    # probably not what a real deployment wants. Set it deliberately.
+    # Namespaces it may create and scale Deployments in. Empty = its own only.
+    # Right default, probably not what a real deployment wants.
     namespaces: []
 
   resources:
@@ -69,9 +62,9 @@ simlab-api:
       enabled: true
       storage: 8Gi
       storageClassName: longhorn-single-odin
-      # The embedded Postgres is fine for this workload — one writer, a few
-      # thousand rows per run. Point database.existingSecret at a managed
-      # instance if runs are ever to be kept long-term.
+      # Losing this costs the record of past runs, not the ability to
+      # reproduce them — scenarios carry seeds. longhorn-hugin (3 replicas) if
+      # that record is wanted durably.
 
   resources:
     requests: { cpu: 200m, memory: 256Mi }
@@ -83,9 +76,8 @@ simlab-web:
 
   ingress:
     enabled: true
-    # nginx is the only IngressClass here and is marked default, so this is
-    # redundant — and stated anyway, because a second class appearing later
-    # would silently change which one an unspecified Ingress picked up.
+    # Redundant (nginx is the only class and is default) but explicit, so a
+    # second class appearing later cannot silently take over.
     className: nginx
     host: ""   # set by the infra repo, which owns the DNS
     annotations:

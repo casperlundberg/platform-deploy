@@ -1,0 +1,44 @@
+{{- /*
+Storage policy, enforced at render time rather than left to review.
+
+This project's volumes go on Longhorn, never on local-path. local-path is
+node-local with no replication and no expansion, and a pod rescheduled onto
+another node silently comes up with an empty volume — which for the
+autoscaler's credential store means it comes back unable to scale anything,
+with nothing in its logs saying why.
+
+The check also refuses an *empty* class, which is the more common mistake.
+Two StorageClasses are marked default on this cluster (local-path and
+longhorn-hugin), so an unspecified class does not fall back to something
+sensible; it binds to whichever the API server picks.
+
+Set storage.requireLonghorn to false for a laptop cluster, which has no
+Longhorn at all. That is the only case it is meant for.
+*/ -}}
+
+{{- define "autoscale-platform.requireLonghornClass" -}}
+  {{- $path := .path -}}
+  {{- $class := .class | default "" -}}
+  {{- if not $class -}}
+    {{- fail (printf "\n\n%s is not set.\n\nThis project's volumes must be on a Longhorn class. An empty value does not\nfall back to something sensible here: two StorageClasses are marked default\n(local-path and longhorn-hugin), so the choice is whichever the API server\nhappens to make.\n\nSet it to longhorn-single-odin, or set storage.requireLonghorn=false if this\nis a laptop cluster with no Longhorn.\n" $path) -}}
+  {{- end -}}
+  {{- if not (hasPrefix "longhorn" $class) -}}
+    {{- fail (printf "\n\n%s is %q.\n\nOnly Longhorn classes are accepted for this project. local-path is node-local\nwith no replication, and a pod rescheduled onto another node comes up with an\nempty volume — for the autoscaler that means losing every registered target's\naccess keys with nothing in the logs to say why.\n\nUse longhorn-single-odin, or set storage.requireLonghorn=false if this is a\nlaptop cluster with no Longhorn.\n" $path $class) -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if .Values.storage.requireLonghorn }}
+  {{- $persistence := (.Values.autoscaler | default dict).persistence | default dict }}
+  {{- if $persistence.enabled }}
+    {{- include "autoscale-platform.requireLonghornClass" (dict
+          "path" "autoscaler.persistence.storageClassName"
+          "class" $persistence.storageClassName) }}
+  {{- end }}
+
+  {{- $embedded := ((index .Values "simlab-api" | default dict).database | default dict).embedded | default dict }}
+  {{- if $embedded.enabled }}
+    {{- include "autoscale-platform.requireLonghornClass" (dict
+          "path" "simlab-api.database.embedded.storageClassName"
+          "class" $embedded.storageClassName) }}
+  {{- end }}
+{{- end }}
