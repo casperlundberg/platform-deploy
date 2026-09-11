@@ -46,6 +46,13 @@ secret-bearing: it holds Kubernetes tokens, ColonyOS private keys and Docker
 client certificates in the clear, because a registry that stored them redacted
 would be useless after a restart.
 
+Losing the volume is recoverable but not free: no run data lives there, so the
+cost is re-entering each target's credentials by hand. On vikingvault the
+class this project uses (`longhorn-single-odin`) keeps one replica and
+reclaims on delete, so both a node failure and a `helm uninstall` have that
+cost. A replicated class is the fix if the platform is ever expected to
+survive a node failure unattended.
+
 **RBAC** is namespace-scoped Roles, one per namespace the autoscaler is
 permitted to provision into, listed in `autoscaler.rbac.namespaces`. It needs:
 
@@ -131,9 +138,14 @@ Nothing here needs a particular node. If the cluster wants these on specific
 nodes, `nodeSelector`, `tolerations` and `affinity` are exposed on all three
 service charts and are the infrastructure repository's decision.
 
-One thing is worth knowing: on vikingvault, `odin-worker-1..3` carry
-`decay.io/tier=local` and `odin-worker-4` carries `decay.io/tier=cloud`. Those
-labels are for the *executors* an autoscaler target provisions, not for these
-four workloads — but a `colonyos-k8s` target that wants its two tiers on
-different nodes would use them, through that target's own pod spec rather than
-through this chart.
+One thing is worth knowing. On vikingvault (checked 2026-09-11)
+`odin-worker-1..3` still carry `decay.io/tier=local` and `odin-worker-4`
+carries `decay.io/tier=cloud` — left over from an earlier incarnation of this
+project, whose workloads are otherwise entirely gone. Those labels are for the
+*executors* an autoscaler target provisions, not for these four workloads, but
+a `colonyos-k8s` target that wants its two tiers on different nodes could use
+them as they stand, through that target's own pod spec rather than through
+this chart.
+
+The four large nodes are `odin-worker-1..4` at 6 CPU and 24Gi each; the
+masters and the two small workers are not somewhere to put a database.

@@ -25,23 +25,24 @@ here. If it would change on a different cluster, it belongs there.
 
 ## Checklist
 
-### 1. Namespace — decision required
+### 1. Namespace — `autoscale-platform`, on a clean sheet
 
-The standing convention on vikingvault is that a new service joins
-`priority-decay-journal` rather than taking a namespace of its own.
+Checked on the cluster, 2026-09-11: the previous incarnation of this project is
+gone. No `priority-decay-journal`, `decay-system`, `decay-executors`,
+`mine-forge-golang`, `simapp-python` or `mine-science-python` namespace; none
+of the 40 ArgoCD Applications belongs to it; no released PersistentVolumes
+left behind. Nothing is being joined or reused.
 
-There is a genuine argument for isolating this platform instead: the
-autoscaler holds credentials for other systems, creates Deployments, and reads
-Secrets. Its RBAC and its blast radius are unlike anything else in that
-namespace, and a namespace boundary is the cheapest way to keep them apart.
+So this platform takes its own namespace, `autoscale-platform`, which is what
+the chart and the Application reference already use. That also happens to be
+the right shape for it independently: the autoscaler holds credentials for
+other systems, creates Deployments and reads Secrets, so its RBAC and its
+blast radius are unlike a normal workload's, and a namespace boundary is the
+cheapest way to keep them apart.
 
-Either works. The charts are namespace-agnostic and resolve each other by
-release name. **Decide deliberately rather than inheriting the default in
-`argocd/autoscale-platform.yaml`.**
-
-If the platform *does* go into `priority-decay-journal`, note that the release
-name prefixes every resource, so `platform-autoscaler` and friends will not
-collide with anything already there.
+The charts are namespace-agnostic and resolve each other by release name, so
+if a different name is wanted, only the Application's
+`destination.namespace` changes.
 
 ### 2. Storage class — required, no default possible
 
@@ -54,11 +55,23 @@ Set on both:
 - `autoscaler.persistence.storageClassName`
 - `simlab-api.database.embedded.storageClassName`
 
-`values/vikingvault.yaml` uses `longhorn-single-odin`, which is what the rest
-of this project uses.
+Verified on the cluster, 2026-09-11: `local-path` and `longhorn-hugin` are
+both marked default; `longhorn` and `longhorn-single-odin` are not.
+
+`values/vikingvault.yaml` uses `longhorn-single-odin`
+(`numberOfReplicas: 1`, `reclaimPolicy: Delete`, `allowVolumeExpansion:
+true`), which is what this project has used before.
 
 **If left unset:** the PVC stays Pending forever and nothing in the pod's
 events explains why.
+
+**Two properties of that class are worth a decision rather than a default.**
+A single replica means losing the node loses the volume, and `Delete` means
+removing the release destroys it. On the autoscaler's volume that costs every
+registered target's access keys, which then have to be re-entered by hand. It
+is recoverable — no run data lives there — but if the platform is ever
+expected to survive a node failure unattended, a replicated class is the
+change to make, and it is the infra repo's to make.
 
 ### 3. The autoscaler's volume is secret-bearing
 

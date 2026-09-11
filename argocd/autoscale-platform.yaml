@@ -47,15 +47,10 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    # CLUSTER: which namespace. This project's other services were
-    # consolidated into `priority-decay-journal` on 2026-09-01, and the
-    # standing convention is that a new service joins it rather than taking a
-    # namespace of its own.
-    #
-    # There is an argument for isolating this one: the autoscaler holds
-    # credentials for other clusters and creates Deployments, so its RBAC and
-    # its blast radius are unlike anything else in that namespace. That is the
-    # infra repo's call, not this repository's — see docs/infra-handover.md.
+    # A clean sheet: checked on the cluster 2026-09-11, the previous
+    # incarnation of this project is entirely gone — no namespaces, no
+    # Applications, no released volumes. Nothing is being joined or reused,
+    # and this platform takes its own namespace.
     namespace: autoscale-platform
 
   syncPolicy:

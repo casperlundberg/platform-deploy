@@ -1,13 +1,24 @@
-# The vikingvault-ts cluster (k3s v1.33.4, 9 nodes).
+# The vikingvault-ts cluster.
 #
-# This file records what that cluster requires, as far as this project knows
-# it. It is a starting point for the infrastructure repository, not a
-# substitute for it: that repository is the GitOps source of truth, and this
-# chart must never be helm-installed here. ArgoCD manages the namespace with
-# selfHeal on, so a direct install creates a second owner and gets reverted.
+# This file records what that cluster requires. It is a starting point for the
+# infrastructure repository, not a substitute for it: that repository is the
+# GitOps source of truth, and this chart must never be helm-installed here.
+# ArgoCD manages with selfHeal on, so a direct install creates a second owner
+# and gets reverted.
 #
-# Every value below is a cluster fact. If one of them changes, it changes here
-# and in the infra repo, not in the chart.
+# Every value below was read off the cluster on 2026-09-11, not assumed:
+#
+#   9 nodes; odin-worker-1..4 are the large ones at 6 CPU / 24Gi each
+#   StorageClasses: local-path (default), longhorn-hugin (default),
+#     longhorn, longhorn-single-odin  ← two defaults, hence no implicit choice
+#   longhorn-single-odin: numberOfReplicas 1, reclaimPolicy Delete,
+#     allowVolumeExpansion true, diskSelector single-replica
+#   IngressClass: nginx only, and marked default
+#   sealed-secrets controller in kube-system
+#   40 ArgoCD Applications, none belonging to this project
+#
+# If one of them changes, it changes here and in the infra repo, not in the
+# chart.
 
 autoscaler:
   image:
@@ -26,6 +37,13 @@ autoscaler:
     # REQUIRED on this cluster. Two StorageClasses are marked default
     # (local-path and longhorn-hugin), so a PVC with no explicit class binds
     # unpredictably — it is not a "pick the sensible one" situation.
+    #
+    # Two properties of this class matter for a volume holding access keys:
+    #   numberOfReplicas: 1 — losing the node loses the volume
+    #   reclaimPolicy: Delete — removing the release destroys it
+    # Either one costs every registered target's credentials, which then have
+    # to be re-entered. That is recoverable but not free; see
+    # docs/resources.md.
     storageClassName: longhorn-single-odin
 
   rbac:
@@ -65,8 +83,9 @@ simlab-web:
 
   ingress:
     enabled: true
-    # ingress-nginx is the only IngressClass on this cluster; Traefik was
-    # replaced. cert-manager and MetalLB are present too.
+    # nginx is the only IngressClass here and is marked default, so this is
+    # redundant — and stated anyway, because a second class appearing later
+    # would silently change which one an unspecified Ingress picked up.
     className: nginx
     host: ""   # set by the infra repo, which owns the DNS
     annotations:
