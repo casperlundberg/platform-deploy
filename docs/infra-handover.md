@@ -18,7 +18,7 @@ whatever templated charts that repository's conventions call for.
 | Which ports, and which service may reach which | NetworkPolicies, if any |
 | That the event stream must not be buffered | Which ingress controller and annotations |
 | That three workloads are strictly single-replica | Sync policy, pruning, self-heal |
-| Which images, by name | Which registry, and the pull secret |
+| Which images, and which registry they are published to | Whether a pull secret is needed, and which |
 
 The rule of thumb: if the answer would be the same on any cluster, it belongs
 here. If it would change on a different cluster, it belongs there.
@@ -86,12 +86,15 @@ systems' credentials.
 
 ### 5. Registry and image pull
 
-Images are named `autoscaler`, `simlab-api` and `simlab-web`. The registry is
-Docker Hub under **`cappelumpa`** — that is the Docker Hub account, not the
-GitHub user `casperlundberg`, and the two have been confused before.
+The charts default to `docker.io/cappelumpa/{autoscaler,simlab-api,simlab-web}`
+— Docker Hub, and the namespace is the Docker Hub account `cappelumpa`, not
+the GitHub user `casperlundberg`. The two have been confused before, and the
+symptom is an ImagePullBackOff that names neither.
 
-The repository is public, so no pull secret is needed today. If that changes,
-`imagePullSecrets` is exposed on all three charts.
+Where the images are published is this project's decision, so it is the chart
+default rather than something the infra repo supplies. Whether a pull secret
+is needed is the cluster's: the repository is public today, so none is, and
+`imagePullSecrets` is exposed on all three charts if that changes.
 
 Nothing publishes these images yet. Whichever CI does so needs to keep four
 things in step — the same rule the rest of this project already follows for

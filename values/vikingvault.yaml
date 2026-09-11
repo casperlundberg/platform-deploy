@@ -11,9 +11,8 @@
 
 autoscaler:
   image:
-    # Docker Hub, not GHCR, and the namespace is cappelumpa — that is the
-    # Docker Hub account, not the GitHub user.
-    repository: docker.io/cappelumpa/autoscaler
+    # The repository is the chart's own default; only the pull policy is worth
+    # stating per cluster.
     pullPolicy: IfNotPresent
 
   auth:
@@ -42,7 +41,6 @@ autoscaler:
 
 simlab-api:
   image:
-    repository: docker.io/cappelumpa/simlab-api
     pullPolicy: IfNotPresent
 
   autoscaler:
@@ -63,7 +61,6 @@ simlab-api:
 
 simlab-web:
   image:
-    repository: docker.io/cappelumpa/simlab-web
     pullPolicy: IfNotPresent
 
   ingress:
