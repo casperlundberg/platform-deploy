@@ -1,0 +1,25 @@
+apiVersion: v2
+name: autoscale-platform
+description: The whole platform in one namespace — autoscaler, Simlab backend, Simlab frontend, and a Postgres.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+# Each service's chart lives with its service, so a chart change and the code
+# change that needs it land together and appVersion cannot drift from what it
+# deploys. This chart only composes them.
+#
+# The file:// paths expect all four repositories checked out side by side,
+# which is how they are meant to be worked on. For an install from a registry,
+# replace each repository with the OCI reference the charts are published to;
+# nothing else changes.
+dependencies:
+  - name: autoscaler
+    version: "0.1.0"
+    repository: "file://../../../autoscaler/deploy/chart"
+  - name: simlab-api
+    version: "0.1.0"
+    repository: "file://../../../simlab-api/deploy/chart"
+  - name: simlab-web
+    version: "0.1.0"
+    repository: "file://../../../simlab-web/deploy/chart"

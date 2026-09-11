@@ -1,0 +1,64 @@
+# The whole platform, in one namespace.
+#
+# Almost nothing needs wiring: each service's chart resolves the others by
+# release name in the same namespace, so installing them together is the case
+# that requires no configuration rather than the case that requires the most.
+#
+# What this file does NOT set, on purpose, is anything that belongs to the
+# cluster rather than to the project: storage class, ingress class, node
+# selectors, image pull secrets. Those are the infrastructure repository's
+# decisions — see docs/infra-handover.md — and a default here would be this
+# project quietly asserting a cluster policy it does not own.
+#
+# Values with no default at all are listed in docs/secrets.md; every one is a
+# credential, and a chart that invented one would ship a well-known secret.
+
+autoscaler:
+  auth:
+    # The token guarding the autoscaler's API, and through it every platform
+    # credential the autoscaler holds. Use existingSecret in any real
+    # environment; a literal token here ends up in a git history.
+    existingSecret: ""
+    token: ""
+
+  persistence:
+    # Registered targets and their access keys. Without it, a restart loses
+    # every target and the service comes back unable to scale anything.
+    enabled: true
+    size: 1Gi
+    storageClassName: ""   # cluster's decision — see docs/infra-handover.md
+
+  rbac:
+    create: true
+    # Namespaces this autoscaler may provision into. Empty means its own only.
+    # A ClusterRole is deliberately not an option: this service creates
+    # Deployments and reads Secrets, and it should be able to do that exactly
+    # where somebody has said so.
+    namespaces: []
+
+simlab-api:
+  autoscaler:
+    # Empty so the chart resolves the autoscaler by release name in this
+    # namespace, which is what installing them together is for.
+    url: ""
+    existingSecret: ""
+    token: ""
+
+  database:
+    embedded:
+      # A Postgres in the namespace, for a self-contained install. Point
+      # database.url at a managed instance instead for anything long-lived.
+      enabled: true
+      storage: 8Gi
+      storageClassName: ""   # cluster's decision
+
+simlab-web:
+  api:
+    host: ""     # resolved by release name
+    port: 8081
+
+  ingress:
+    enabled: false
+    className: ""   # cluster's decision
+    host: ""
+    tls: []
