@@ -1,0 +1,81 @@
+# The vikingvault-ts cluster (k3s v1.33.4, 9 nodes).
+#
+# This file records what that cluster requires, as far as this project knows
+# it. It is a starting point for the infrastructure repository, not a
+# substitute for it: that repository is the GitOps source of truth, and this
+# chart must never be helm-installed here. ArgoCD manages the namespace with
+# selfHeal on, so a direct install creates a second owner and gets reverted.
+#
+# Every value below is a cluster fact. If one of them changes, it changes here
+# and in the infra repo, not in the chart.
+
+autoscaler:
+  image:
+    # Docker Hub, not GHCR, and the namespace is cappelumpa — that is the
+    # Docker Hub account, not the GitHub user.
+    repository: docker.io/cappelumpa/autoscaler
+    pullPolicy: IfNotPresent
+
+  auth:
+    # A SealedSecret in the infra repo under sealed-secrets/<namespace>/.
+    # Never a literal here.
+    existingSecret: autoscaler-api-token
+
+  persistence:
+    enabled: true
+    size: 1Gi
+    # REQUIRED on this cluster. Two StorageClasses are marked default
+    # (local-path and longhorn-hugin), so a PVC with no explicit class binds
+    # unpredictably — it is not a "pick the sensible one" situation.
+    storageClassName: longhorn-single-odin
+
+  rbac:
+    create: true
+    # The namespaces this autoscaler may create and scale Deployments in.
+    # Left empty it can only act in its own, which is the right default and
+    # probably not what a real deployment wants. Set it deliberately.
+    namespaces: []
+
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+simlab-api:
+  image:
+    repository: docker.io/cappelumpa/simlab-api
+    pullPolicy: IfNotPresent
+
+  autoscaler:
+    existingSecret: autoscaler-api-token
+
+  database:
+    embedded:
+      enabled: true
+      storage: 8Gi
+      storageClassName: longhorn-single-odin
+      # The embedded Postgres is fine for this workload — one writer, a few
+      # thousand rows per run. Point database.existingSecret at a managed
+      # instance if runs are ever to be kept long-term.
+
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+simlab-web:
+  image:
+    repository: docker.io/cappelumpa/simlab-web
+    pullPolicy: IfNotPresent
+
+  ingress:
+    enabled: true
+    # ingress-nginx is the only IngressClass on this cluster; Traefik was
+    # replaced. cert-manager and MetalLB are present too.
+    className: nginx
+    host: ""   # set by the infra repo, which owns the DNS
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls: []
+
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { memory: 128Mi }

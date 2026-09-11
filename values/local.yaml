@@ -1,0 +1,38 @@
+# A laptop cluster — kind, k3d, minikube, Docker Desktop.
+#
+# Self-contained: the Postgres comes with it, nothing is exposed, and the API
+# token is a literal because nothing here is worth protecting. Do not copy this
+# file as the basis for a real environment; copy vikingvault.yaml.
+
+autoscaler:
+  auth:
+    # Fine here and nowhere else.
+    token: "local-development-token"
+  persistence:
+    enabled: true
+    size: 1Gi
+    # kind, k3d and minikube all ship a default StorageClass, so an empty value
+    # binds predictably. On a cluster with two defaults marked it does not —
+    # see vikingvault.yaml.
+    storageClassName: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+simlab-api:
+  autoscaler:
+    token: "local-development-token"
+  database:
+    embedded:
+      enabled: true
+      storage: 2Gi
+      storageClassName: ""
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+simlab-web:
+  ingress:
+    # Reach it with a port-forward instead:
+    #   kubectl -n autoscale-platform port-forward svc/platform-simlab-web 8080:8080
+    enabled: false

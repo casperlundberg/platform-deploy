@@ -1,0 +1,73 @@
+# An ArgoCD Application for the platform, written the way the infrastructure
+# repository would need it.
+#
+# THIS FILE IS A REFERENCE. It is not applied from here and should not be.
+# Copy it into vikingvault-infrastructure at
+# devops/argocd-applications/autoscale-platform.yaml, adjust it to that
+# repository's conventions, and let ArgoCD deploy from there.
+#
+# Three things below are decisions the infra repo owns, marked CLUSTER:
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autoscale-platform
+  namespace: argocd
+  # CLUSTER: the finalizer controls whether removing the Application also
+  # removes its workloads. Every other Application in the infra repo has an
+  # opinion about this; match it rather than this file.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # CLUSTER: which ArgoCD project this belongs to, and what that project
+  # permits.
+  project: default
+
+  source:
+    # CLUSTER: where the chart is read from. Two workable shapes:
+    #
+    #  1. Point at this repository, path charts/autoscale-platform. Simple,
+    #     but the chart's file:// dependencies will not resolve for ArgoCD's
+    #     repo-server — it has no sibling checkouts. Requires publishing the
+    #     three service charts to a registry and switching Chart.yaml to OCI
+    #     references first.
+    #
+    #  2. Copy the rendered manifests, or an equivalent templated chart, into
+    #     the infra repo and point at that. This is closer to how the rest of
+    #     this project is deployed, where the infra repo holds the Application
+    #     and the chart lives with the service.
+    #
+    # `make template VALUES=values/vikingvault.yaml` produces the manifests
+    # either approach has to reproduce.
+    repoURL: https://github.com/casperlundberg/platform-deploy
+    targetRevision: main
+    path: charts/autoscale-platform
+    helm:
+      valueFiles:
+        - ../../values/vikingvault.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    # CLUSTER: which namespace. This project's other services were
+    # consolidated into `priority-decay-journal` on 2026-09-01, and the
+    # standing convention is that a new service joins it rather than taking a
+    # namespace of its own.
+    #
+    # There is an argument for isolating this one: the autoscaler holds
+    # credentials for other clusters and creates Deployments, so its RBAC and
+    # its blast radius are unlike anything else in that namespace. That is the
+    # infra repo's call, not this repository's — see docs/infra-handover.md.
+    namespace: autoscale-platform
+
+  syncPolicy:
+    automated:
+      prune: true
+      # CLUSTER: selfHeal is on for most Applications here. Note that it is
+      # what makes a direct `helm install` or `kubectl patch` get silently
+      # reverted.
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The autoscaler writes Secrets of its own into its namespace, for the
+      # ColonyOS executor keys its pods read. Those are not chart-managed and
+      # must not be pruned as though they had gone missing from git.
+      - ApplyOutOfSyncOnly=true
