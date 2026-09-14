@@ -51,8 +51,8 @@ manifests to read. Real deployment goes through the infra repo.
 | Path | What it is |
 |---|---|
 | [`charts/autoscale-platform/`](charts/autoscale-platform) | The umbrella chart. Composes the three service charts, which live with their services. |
-| [`values/`](values) | Per-environment values. `local.yaml` for a laptop cluster, `vikingvault.yaml` filled in with that cluster's real standards. |
-| [`argocd/`](argocd) | An ArgoCD Application, written as the infra repo would need it. A reference, not a deployed object. |
+| [`values/`](values) | Per-environment values. `local.yaml` for a laptop cluster, `vikingvault.yaml` filled in with that cluster's real standards. [`vikingvault/`](values/vikingvault) is the same configuration split one file per service, which is what ArgoCD reads. |
+| [`argocd/`](argocd) | Copies of the three ArgoCD Applications that deploy this, which live in `vikingvault-infrastructure`. Copies for reading — that repo is the GitOps source of truth. |
 | [`docs/requirements.md`](docs/requirements.md) | What the platform needs: resources, constraints, ports, RBAC, credentials. |
 | [`docs/infra-handover.md`](docs/infra-handover.md) | The checklist for the infra repo, with the decisions it has to make. |
 | [`verify.sh`](verify.sh) | Runs the whole platform locally and checks it does what it claims. |
@@ -62,6 +62,8 @@ manifests to read. Real deployment goes through the infra repo.
 ```bash
 make verify      # build both services, run them for real, check the result
 make lint        # lint the umbrella chart
+make check-values # the two statements of the vikingvault config still agree
+make check-argocd # argocd/ still matches the live Applications
 make template    # render the manifests for reading or diffing
 ```
 

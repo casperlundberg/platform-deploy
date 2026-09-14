@@ -1,0 +1,48 @@
+# simlab-web on the vikingvault-ts cluster.
+#
+# This is the reference copy. What ArgoCD actually reads is the identical
+# block inlined under helm.values in
+# vikingvault-infrastructure/devops/argocd-applications/autoscale-platform-simlab-web.yaml
+# — that repo's house style is inline values, not a values file, and it is the
+# GitOps source of truth. argocd/simlab-web.yaml is a copy of that Application, and
+# `make check-argocd` fails if the copy drifts.
+#
+# Keeping this file is what lets the configuration be stated per service in the
+# shape the infra repo needs. values/vikingvault.yaml says the same thing in
+# umbrella-chart shape, for `make lint`, `make template` and `make verify`;
+# `make check-values` proves the two render identically.
+
+image:
+  pullPolicy: IfNotPresent
+  # tag: set by the infra repo to the sha- tag it intends to run — see
+  # "Images and tags" in docs/infra-handover.md.
+
+api:
+  # Explicit for the same reason as autoscaler.url in simlab-api.yaml: with
+  # three separate Applications the release-name default is a coupling no
+  # reader of this file can see.
+  #
+  # Must match releaseName in argocd/simlab-api.yaml: that Application's
+  # Service is named <releaseName>-simlab-api.
+  host: platform-simlab-api
+  port: 8081
+
+ingress:
+  enabled: true
+  # Redundant (nginx is the only class and is default) but explicit, so a
+  # second class appearing later cannot silently take over.
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  # The infra repo owns the DNS; this records what it chose, so that
+  # `make template` renders what is actually deployed. Never empty — the chart
+  # renders `host: ""`, a rule matching every host reaching the controller.
+  host: simlab.vikingvault.dev
+  tls:
+    - secretName: simlab-tls
+      hosts:
+        - simlab.vikingvault.dev
+
+resources:
+  requests: { cpu: 25m, memory: 32Mi }
+  limits: { memory: 128Mi }

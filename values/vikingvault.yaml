@@ -33,11 +33,9 @@ autoscaler:
     # Longhorn only — the chart refuses anything else, and refuses an unset
     # value too. See charts/autoscale-platform/templates/validate-storage.yaml.
     #
-    # This class is one replica on one tagged disk (odin-worker-2/disk-4), with
-    # no backup target configured, so a node or disk failure loses it. On this
-    # volume that costs re-entering each target's access keys; no run data is
-    # here. docs/infra-handover.md has the two ways to change that without
-    # leaving Longhorn.
+    # Matches the live PVC, whose storageClassName is immutable. See
+    # docs/infra-handover.md item 2 — this is arguably the wrong pool for a
+    # credential store, and moving it is a migration rather than an edit.
     storageClassName: longhorn-single-odin
 
   rbac:
@@ -61,10 +59,8 @@ simlab-api:
     embedded:
       enabled: true
       storage: 8Gi
-      storageClassName: longhorn-single-odin
-      # Losing this costs the record of past runs, not the ability to
-      # reproduce them — scenarios carry seeds. longhorn-hugin (3 replicas) if
-      # that record is wanted durably.
+      # Matches the live PVC, which is on the 3-replica pool.
+      storageClassName: longhorn-hugin
 
   resources:
     requests: { cpu: 200m, memory: 256Mi }
@@ -79,10 +75,15 @@ simlab-web:
     # Redundant (nginx is the only class and is default) but explicit, so a
     # second class appearing later cannot silently take over.
     className: nginx
-    host: ""   # set by the infra repo, which owns the DNS
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
-    tls: []
+    # Recorded, not decided, here — the infra repo owns the DNS. Never empty:
+    # the chart renders `host: ""`, which matches every host on the controller.
+    host: simlab.vikingvault.dev
+    tls:
+      - secretName: simlab-tls
+        hosts:
+          - simlab.vikingvault.dev
 
   resources:
     requests: { cpu: 25m, memory: 32Mi }

@@ -1,0 +1,79 @@
+# A COPY of what is deployed. The live file is
+# vikingvault-infrastructure/devops/argocd-applications/autoscale-platform-simlab-api.yaml,
+# which is the GitOps source of truth; this copy is here so that this
+# repository states the whole deployment contract on its own. Edit the infra
+# repo, then update this. `make check-argocd` fails if the two diverge.
+#
+# The Simlab backend. See autoscale-platform-autoscaler.yaml for the shape of
+# this three-Application set and why the release name is pinned.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autoscale-platform-simlab-api
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # after the autoscaler it calls
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/casperlundberg/simlab-api.git
+    targetRevision: main
+    path: deploy/chart
+    helm:
+      releaseName: platform
+      values: |
+        image:
+          repository: docker.io/cappelumpa/simlab-api
+          # The three services do not share a tag — separate repositories,
+          # separate histories. See autoscale-platform-autoscaler.yaml for why
+          # the sha and not "main".
+          tag: "sha-01a03f5580fc920db92aa43df1dbcdeb5c79c255"
+          pullPolicy: IfNotPresent
+
+        autoscaler:
+          # The autoscaler Application's Service, which is named from its
+          # release name ("platform"), not from its Application name. The
+          # chart would default this to the same string; it is written out so
+          # that a release rename breaks here, in a file that names it.
+          url: http://platform-autoscaler:8080
+          # The same Secret the autoscaler reads — this is the caller's copy
+          # of the token guarding that API.
+          existingSecret: autoscaler-api-token
+
+        database:
+          embedded:
+            enabled: true
+            storage: 8Gi
+            # The class the live PVC is bound to; immutable, so this must
+            # match it. Comfortably right either way: this holds the record of
+            # past runs, and hugin is the 3-replica pool.
+            storageClassName: longhorn-hugin
+
+        resources:
+          requests: { cpu: 200m, memory: 256Mi }
+          limits: { memory: 1Gi }
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autoscale-platform
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  info:
+    - name: 'Description'
+      value: 'Autoscale Platform - Simlab backend, workload replay + results (Go + Postgres)'

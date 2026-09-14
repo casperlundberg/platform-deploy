@@ -1,0 +1,103 @@
+# A COPY of what is deployed. The live file is
+# vikingvault-infrastructure/devops/argocd-applications/autoscale-platform-autoscaler.yaml,
+# which is the GitOps source of truth; this copy is here so that this
+# repository states the whole deployment contract on its own. Edit the infra
+# repo, then update this. `make check-argocd` fails if the two diverge.
+#
+# The scaling controller. One of three Applications making up autoscale-platform:
+# autoscaler (this), simlab-api, simlab-web — all into the autoscale-platform
+# namespace, all pinned to the Helm release name "platform".
+#
+# The release name is load-bearing, not cosmetic. The charts find each other by
+# it: simlab-api is configured with http://platform-autoscaler:8080, which is
+# this release's Service. Renaming the release here without changing that
+# breaks Simlab at run time, not at sync time.
+#
+# Charts come from the service repositories (public), where they live beside
+# the code they deploy. platform-deploy is the project's own deployment repo
+# and carries the reasoning: docs/infra-handover.md, docs/requirements.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autoscale-platform-autoscaler
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"  # before simlab-api, which calls it
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/casperlundberg/autoscaler.git
+    targetRevision: main
+    path: deploy/chart
+    helm:
+      releaseName: platform
+      values: |
+        image:
+          repository: docker.io/cappelumpa/autoscaler
+          # sha-<full commit sha>; the service CI publishes this and a moving
+          # "main" on every push. Deploy the sha: a manifest naming "main"
+          # never changes, so ArgoCD sees nothing to sync and IfNotPresent
+          # leaves the running pods on the old image.
+          tag: "sha-d02c1162d08bc5ab7ba2288700c4d8252e74bbf8"
+          pullPolicy: IfNotPresent
+
+        auth:
+          # Guards every endpoint but the probes. Without it the service runs
+          # unauthenticated while holding Kubernetes tokens, ColonyOS private
+          # keys and Docker certificates for other systems.
+          # sealed-secrets/autoscale-platform/, key "api-token".
+          existingSecret: autoscaler-api-token
+
+        persistence:
+          enabled: true
+          size: 1Gi
+          # This is the class the live PVC is already bound to, and a PVC's
+          # storageClassName is immutable — changing it here does not migrate
+          # anything, it makes the sync fail on an immutable field.
+          #
+          # It is arguably the wrong class: the infra repo documents
+          # single-odin as being for "reconstructable / bulk data", and this
+          # volume is every registered target's access keys, which is neither.
+          # Moving it to longhorn-hugin is a volume migration, not an edit —
+          # see item 2 in platform-deploy/docs/infra-handover.md.
+          storageClassName: longhorn-single-odin
+
+        rbac:
+          create: true
+          # Namespaces it may create and scale Deployments in. Empty means its
+          # own only — safe, and probably not what you want once it drives
+          # real workloads. A ClusterRole is deliberately not offered.
+          namespaces: []
+
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+          limits: { memory: 512Mi }
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autoscale-platform
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      # This service writes Secrets of its own — ColonyOS executor keys that
+      # its pods read. They are not chart-managed, and deleting them
+      # crash-loops every executor.
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  info:
+    - name: 'Description'
+      value: 'Autoscale Platform - scaling controller (Go, single replica, Recreate)'

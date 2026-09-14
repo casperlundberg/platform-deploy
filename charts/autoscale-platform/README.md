@@ -36,6 +36,12 @@ For an install from a registry, replace each `repository:` in `Chart.yaml`
 with the OCI reference the charts are published to. Nothing else about the
 chart changes.
 
+It is also why this chart is not what ArgoCD deploys: its repo-server has no
+sibling repositories to resolve `file://` against, so the cluster is deployed
+from one Application per service chart instead. Item 8 in
+`../../docs/infra-handover.md` has the comparison, and publishing to OCI is
+what would let this chart take over.
+
 ## What it deliberately leaves unset
 
 Storage class, ingress class, node selectors, image pull secrets and

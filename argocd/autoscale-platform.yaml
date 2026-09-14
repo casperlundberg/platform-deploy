@@ -1,12 +1,24 @@
-# An ArgoCD Application for the platform, written the way the infrastructure
-# repository would need it.
+# The whole platform as a single ArgoCD Application, via the umbrella chart.
+#
+# THIS FILE IS THE ALTERNATIVE THAT WAS NOT CHOSEN, kept because it becomes
+# the better arrangement the moment the service charts are published to an OCI
+# registry. As written it does not work: the umbrella chart's dependencies are
+# file:// paths to the sibling repositories, and ArgoCD's repo-server has no
+# siblings to resolve them against.
+#
+# What is deployed instead is one Application per service —
+# argocd/{autoscaler,simlab-api,simlab-web}.yaml — which works because each
+# service chart has no dependencies at all. Item 8 in docs/infra-handover.md
+# has the comparison.
+#
+# To use this file instead: publish the three service charts to OCI, replace
+# the file:// repositories in charts/autoscale-platform/Chart.yaml with their
+# OCI references, and delete the three per-service Applications. Nothing else
+# changes — values/vikingvault.yaml is already the same configuration the
+# three per-service files carry, and `make check-values` proves it.
 #
 # THIS FILE IS A REFERENCE. It is not applied from here and should not be.
-# Copy it into vikingvault-infrastructure at
-# devops/argocd-applications/autoscale-platform.yaml, adjust it to that
-# repository's conventions, and let ArgoCD deploy from there.
-#
-# Three things below are decisions the infra repo owns, marked CLUSTER:
+# Decisions the infra repo owns are marked CLUSTER.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -23,14 +35,15 @@ spec:
   project: default
 
   source:
-    # CLUSTER: where the chart is read from. The file:// dependencies below
-    # will not resolve for ArgoCD's repo-server, so either publish the three
-    # service charts to OCI and switch Chart.yaml, or reproduce the manifests
-    # in the infra repo. See docs/infra-handover.md item 8.
+    # Works only once Chart.yaml names OCI references instead of file://
+    # paths — see the header.
     repoURL: https://github.com/casperlundberg/platform-deploy
     targetRevision: main
     path: charts/autoscale-platform
+    # The release name the three per-service Applications pin explicitly. Here
+    # it comes free: one release, and the charts resolve each other from it.
     helm:
+      releaseName: platform
       valueFiles:
         - ../../values/vikingvault.yaml
 

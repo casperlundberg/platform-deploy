@@ -34,6 +34,13 @@ jobs:
       - run: make lint
       - run: make template-all
 
+      # The cluster is deployed from values/vikingvault/, one file per ArgoCD
+      # Application, while values/vikingvault.yaml says the same thing for the
+      # umbrella chart. Editing one and not the other is the mistake this
+      # catches, and it is silent otherwise — both files render perfectly well
+      # on their own.
+      - run: make check-values
+
       # A rendered manifest that is not valid Kubernetes is worth catching
       # here rather than in an ArgoCD sync failure. This was
       # `kubectl apply --dry-run=client`, which cannot do it on a runner:

@@ -1,0 +1,61 @@
+# autoscaler on the vikingvault-ts cluster.
+#
+# This is the reference copy. What ArgoCD actually reads is the identical
+# block inlined under helm.values in
+# vikingvault-infrastructure/devops/argocd-applications/autoscale-platform-autoscaler.yaml
+# — that repo's house style is inline values, not a values file, and it is the
+# GitOps source of truth. argocd/autoscaler.yaml is a copy of that Application, and
+# `make check-argocd` fails if the copy drifts.
+#
+# Keeping this file is what lets the configuration be stated per service in the
+# shape the infra repo needs. values/vikingvault.yaml says the same thing in
+# umbrella-chart shape, for `make lint`, `make template` and `make verify`;
+# `make check-values` proves the two render identically.
+
+image:
+  # The repository is the chart's own default; only the pull policy is worth
+  # stating per cluster.
+  pullPolicy: IfNotPresent
+  # tag: the infra repo sets this to the sha- tag it intends to run. Left
+  # empty the chart falls back to appVersion 0.1.0, which nothing publishes
+  # and which fails as ImagePullBackOff. See "Images and tags" in
+  # docs/infra-handover.md for why a moving `main` tag cannot work here.
+
+auth:
+  # A SealedSecret in the infra repo under sealed-secrets/<namespace>/.
+  # Never a literal here. simlab-api references the same Secret.
+  existingSecret: autoscaler-api-token
+
+persistence:
+  enabled: true
+  size: 1Gi
+  # REQUIRED, and nothing checks it on this path. Two StorageClasses are
+  # marked default on this cluster (local-path and longhorn-hugin), so a PVC
+  # with no explicit class binds unpredictably — it is not a "pick the
+  # sensible one" situation.
+  #
+  # The umbrella chart fails the render on an unset or non-Longhorn class.
+  # Deployed as three Applications that template never runs, so this line is
+  # the only thing standing between the autoscaler's credential store and
+  # local-path — which is node-local, so a reschedule brings the pod back with
+  # an empty volume and no explanation. See item 8 in docs/infra-handover.md.
+  #
+  # The class the live PVC is bound to. A PVC's storageClassName is
+  # immutable, so this has to match it: changing the value migrates nothing
+  # and only makes the sync fail on an immutable field.
+  #
+  # It is arguably the wrong class — the infra repo documents single-odin as
+  # for "reconstructable / bulk data", and this volume is every registered
+  # target's access keys, which is neither. Moving it is a volume migration;
+  # docs/infra-handover.md item 2 has the procedure.
+  storageClassName: longhorn-single-odin
+
+rbac:
+  create: true
+  # Namespaces it may create and scale Deployments in. Empty = its own only.
+  # Right default, probably not what a real deployment wants.
+  namespaces: []
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 512Mi }

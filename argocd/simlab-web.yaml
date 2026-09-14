@@ -1,0 +1,80 @@
+# A COPY of what is deployed. The live file is
+# vikingvault-infrastructure/devops/argocd-applications/autoscale-platform-simlab-web.yaml,
+# which is the GitOps source of truth; this copy is here so that this
+# repository states the whole deployment contract on its own. Edit the infra
+# repo, then update this. `make check-argocd` fails if the two diverge.
+#
+# The Simlab frontend, and the only part of autoscale-platform with an
+# Ingress. See autoscale-platform-autoscaler.yaml for the shape of this
+# three-Application set.
+#
+# The SPA container proxies /api to simlab-api itself, so the browser sees one
+# origin, the API needs no CORS, and no platform credential ever reaches the
+# browser. That is why there is one host here and not two.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: autoscale-platform-simlab-web
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"  # after the API it proxies to
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/casperlundberg/simlab-web.git
+    targetRevision: main
+    path: deploy/chart
+    helm:
+      releaseName: platform
+      values: |
+        image:
+          repository: docker.io/cappelumpa/simlab-web
+          tag: "sha-197b9794206d748d7b15ecf963e8cb3935040f4e"
+          pullPolicy: IfNotPresent
+
+        api:
+          # The simlab-api Application's Service, named from its release name.
+          host: platform-simlab-api
+          port: 8081
+
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            cert-manager.io/cluster-issuer: "letsencrypt-prod"
+          # Never leave this empty: the chart renders `host: ""`, which is a
+          # rule matching every host that reaches the ingress controller.
+          host: simlab.vikingvault.dev
+          tls:
+            - secretName: simlab-tls
+              hosts:
+                - simlab.vikingvault.dev
+
+        resources:
+          requests: { cpu: 25m, memory: 32Mi }
+          limits: { memory: 128Mi }
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: autoscale-platform
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  info:
+    - name: 'Description'
+      value: 'Autoscale Platform - Simlab frontend SPA, proxies /api to simlab-api'

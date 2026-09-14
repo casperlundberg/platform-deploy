@@ -1,0 +1,51 @@
+# simlab-api on the vikingvault-ts cluster.
+#
+# This is the reference copy. What ArgoCD actually reads is the identical
+# block inlined under helm.values in
+# vikingvault-infrastructure/devops/argocd-applications/autoscale-platform-simlab-api.yaml
+# — that repo's house style is inline values, not a values file, and it is the
+# GitOps source of truth. argocd/simlab-api.yaml is a copy of that Application, and
+# `make check-argocd` fails if the copy drifts.
+#
+# Keeping this file is what lets the configuration be stated per service in the
+# shape the infra repo needs. values/vikingvault.yaml says the same thing in
+# umbrella-chart shape, for `make lint`, `make template` and `make verify`;
+# `make check-values` proves the two render identically.
+
+image:
+  pullPolicy: IfNotPresent
+  # tag: set by the infra repo to the sha- tag it intends to run — see
+  # "Images and tags" in docs/infra-handover.md. The three services do not
+  # share a tag; they are separate repositories with separate histories.
+
+autoscaler:
+  # Explicit, because these are three independently synced Applications now.
+  #
+  # The chart would default this to "http://{{ .Release.Name }}-autoscaler:8080",
+  # which is correct only as long as every Application pins the same Helm
+  # release name. That default is invisible from here — nothing in this file
+  # or in this service's Application would mention the autoscaler at all — so
+  # a rename elsewhere would break Simlab silently at run time rather than at
+  # sync time. Written out, it can be checked against argocd/autoscaler.yaml.
+  #
+  # Must match releaseName in argocd/autoscaler.yaml: that Application's
+  # Service is named <releaseName>-autoscaler.
+  url: http://platform-autoscaler:8080
+
+  # The same SealedSecret the autoscaler itself reads. Both need it: this is
+  # the caller's copy of the token guarding that API.
+  existingSecret: autoscaler-api-token
+
+database:
+  embedded:
+    enabled: true
+    storage: 8Gi
+    # The class the live PVC is bound to, and immutable, so this must match
+    # it. Nothing checks it on this path either — the umbrella chart's
+    # validate-storage.yaml does not run when the services deploy as three
+    # Applications. See item 8 in docs/infra-handover.md.
+    storageClassName: longhorn-hugin
+
+resources:
+  requests: { cpu: 200m, memory: 256Mi }
+  limits: { memory: 1Gi }
