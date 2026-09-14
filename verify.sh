@@ -44,10 +44,16 @@ log()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31m✗\033[0m %s\n' "$*"; exit 1; }
 
+# Explicit ifs rather than `test && action || true`. That form reads as
+# if-then-else and is not one — the `|| true` fires both when the test is
+# false and when the action fails — which is what shellcheck objects to. Here
+# both are genuinely ignorable, so this changes nothing except saying so, and
+# the `|| true` has to stay: a kill of a process that has already exited must
+# not take the trap down under set -e.
 cleanup() {
-  [[ -n "${SIMLAB_PID:-}" ]] && kill "$SIMLAB_PID" 2>/dev/null || true
-  [[ -n "${AUTOSCALER_PID:-}" ]] && kill "$AUTOSCALER_PID" 2>/dev/null || true
-  [[ "$OWN_POSTGRES" == "1" ]] && docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  if [[ -n "${SIMLAB_PID:-}" ]]; then kill "$SIMLAB_PID" 2>/dev/null || true; fi
+  if [[ -n "${AUTOSCALER_PID:-}" ]]; then kill "$AUTOSCALER_PID" 2>/dev/null || true; fi
+  if [[ "$OWN_POSTGRES" == "1" ]]; then docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true; fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
