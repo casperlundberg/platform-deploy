@@ -35,13 +35,18 @@ jobs:
       - run: make template-all
 
       # A rendered manifest that is not valid Kubernetes is worth catching
-      # here rather than in an ArgoCD sync failure.
-      - uses: azure/setup-kubectl@v4
+      # here rather than in an ArgoCD sync failure. This was
+      # `kubectl apply --dry-run=client`, which cannot do it on a runner:
+      # client-side validation still fetches the schema from a cluster, so
+      # with no kubeconfig every file failed on a refused connection to
+      # localhost and nothing was ever validated. kubeconform carries the
+      # schemas itself, and -strict additionally refuses a field no
+      # Kubernetes API knows — which is the mistake a rendered template
+      # actually makes.
       - run: |
-          for file in out/*.yaml; do
-            kubectl apply --dry-run=client -f "$file" >/dev/null \
-              || { echo "$file is not valid"; exit 1; }
-          done
+          curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz kubeconform
+          ./kubeconform -strict -summary out/*.yaml
 
   script:
     runs-on: ubuntu-latest
