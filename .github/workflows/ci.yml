@@ -8,17 +8,27 @@ on:
 jobs:
   chart:
     runs-on: ubuntu-latest
+    # Every run step is inside this repository, which is not the workspace
+    # root here — see the checkout comment below.
+    defaults:
+      run:
+        working-directory: platform-deploy
     steps:
-      - uses: actions/checkout@v4
-
       # The umbrella chart depends on three charts that live in the sibling
-      # repositories, so CI has to check them out to lint anything at all.
+      # repositories, so CI has to reproduce the side-by-side layout they are
+      # worked on in. actions/checkout refuses any path outside the workspace,
+      # so the siblings cannot be placed above this repository; this
+      # repository goes into a subdirectory instead and they sit beside it,
+      # which is exactly what file://../../../<service>/deploy/chart resolves
+      # to from charts/autoscale-platform.
       - uses: actions/checkout@v4
-        with: { repository: casperlundberg/autoscaler, path: ../autoscaler }
+        with: { path: platform-deploy }
       - uses: actions/checkout@v4
-        with: { repository: casperlundberg/simlab-api, path: ../simlab-api }
+        with: { repository: casperlundberg/autoscaler, path: autoscaler }
       - uses: actions/checkout@v4
-        with: { repository: casperlundberg/simlab-web, path: ../simlab-web }
+        with: { repository: casperlundberg/simlab-api, path: simlab-api }
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/simlab-web, path: simlab-web }
 
       - uses: azure/setup-helm@v4
       - run: make lint
