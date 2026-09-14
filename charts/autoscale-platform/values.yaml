@@ -10,8 +10,9 @@
 # decisions — see docs/infra-handover.md — and a default here would be this
 # project quietly asserting a cluster policy it does not own.
 #
-# Values with no default at all are listed in docs/secrets.md; every one is a
-# credential, and a chart that invented one would ship a well-known secret.
+# Values with no default at all are listed under Credentials in
+# docs/requirements.md; every one is a credential, and a chart that invented
+# one would ship a well-known secret.
 
 storage:
   # This project's volumes go on Longhorn, never on local-path, and the render
