@@ -70,8 +70,8 @@ argument for the whole system:
 
 ```
 ✓ both runs replayed the identical 13071 jobs — the seed held
-✓ cloud burst cut SLA breaches from 10690 to 1489
-✓ and it cost 62.3 cloud executor-hours to do it
+✓ cloud burst cut SLA breaches from 10722 to 1452
+✓ and it cost 62.1 cloud executor-hours to do it
 ```
 
 ## The repositories
