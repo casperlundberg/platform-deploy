@@ -39,8 +39,9 @@ Must exist before first sync. Unset, the autoscaler runs unauthenticated while
 holding other systems' credentials.
 
 **4. Images.** `docker.io/cappelumpa/{autoscaler,simlab-api,simlab-web}` —
-Docker Hub account, not the GitHub user. Public, so no pull secret today.
-Nothing publishes them yet.
+Docker Hub account, not the GitHub user. Public, so no pull secret today. Each
+service's CI publishes on every push to its `main`; *Images and tags* below
+says which tag to deploy and why the choice matters.
 
 **5. Ingress.** One rule, `/` to simlab-web, which proxies `/api` itself.
 `nginx` is the only class and is default. Two annotations are load-bearing:
@@ -70,3 +71,35 @@ them, or every executor pod crash-loops. `ApplyOutOfSyncOnly=true` covers it.
 `make verify` runs the whole platform locally in about a minute, so any
 problem afterwards is known to be a deployment problem rather than an
 application one.
+
+## Images and tags
+
+Each service's CI builds its Dockerfile on every push to `main`, behind that
+repository's own test job, and pushes to Docker Hub:
+`docker.io/cappelumpa/autoscaler`, `docker.io/cappelumpa/simlab-api`,
+`docker.io/cappelumpa/simlab-web`. Two tags per build, and they are not
+interchangeable:
+
+- `sha-<full commit sha>` — one commit, one image, never rewritten.
+- `main` — moved to the newest build.
+
+**Deploy the `sha-` tag.** A manifest that names `main` renders identically on
+every build, and ArgoCD syncs on a manifest diff: it would see nothing to do,
+and with `IfNotPresent` against an unchanged tag the running pods would not
+pull the new image either. The deploy has to be a change to the tag itself.
+
+So the infra repo sets `autoscaler.image.tag`, `simlab-api.image.tag` and
+`simlab-web.image.tag` to the commit it intends to run — by hand, or by
+whatever writes it (an Image Updater watching the `sha-` tags is one way, a
+commit to the infra repo the other; either way what moves is the tag in the
+manifest). Left empty each chart falls back to its `appVersion`, `0.1.0`,
+which nothing publishes and which fails as `ImagePullBackOff`.
+
+The three services do not share a tag. They are separate repositories with
+separate histories, so a push to one moves one tag and the other two keep the
+commit they were on, which is the intended behaviour rather than a gap.
+
+Publishing needs two repository secrets in each of the three service
+repositories — `DOCKER_A`, the Docker Hub username, and `DOCKER_B`, an access
+token with write access to the `cappelumpa` namespace. Nothing about them
+reaches the cluster: the images are public and there is still no pull secret.
