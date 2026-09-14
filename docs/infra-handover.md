@@ -100,6 +100,8 @@ separate histories, so a push to one moves one tag and the other two keep the
 commit they were on, which is the intended behaviour rather than a gap.
 
 Publishing needs two repository secrets in each of the three service
-repositories — `DOCKER_A`, the Docker Hub username, and `DOCKER_B`, an access
-token with write access to the `cappelumpa` namespace. Nothing about them
-reaches the cluster: the images are public and there is still no pull secret.
+repositories: `DOCKERHUB_USERNAME`, the Docker Hub account, and
+`DOCKERHUB_TOKEN`, an access token on it with write access to the
+`cappelumpa` namespace. This repository needs neither — it publishes nothing
+and its CI only lints and renders. None of it reaches the cluster either: the
+images are public and there is still no pull secret.
