@@ -107,7 +107,21 @@ e2e: ## Run the end-to-end check as a Job in the cluster, and tail it
 	@kubectl create configmap platform-e2e --namespace $(NAMESPACE) \
 		--from-file=e2e.py=e2e/e2e.py --dry-run=client -o yaml | kubectl apply -f -
 	@kubectl delete job platform-e2e --namespace $(NAMESPACE) --ignore-not-found --wait
-	@kubectl apply -f e2e/job.yaml
+	@# The token Secret is named differently depending on how the platform was
+	@# installed: a cluster using auth.existingSecret has whatever name it chose
+	@# (autoscaler-api-token here), while a self-contained install has the chart
+	@# generate <release>-autoscaler-api-token. job.yaml names the first, because
+	@# that is what this project deploys; this finds whichever actually exists so
+	@# the same check runs against a laptop cluster unchanged.
+	@secret=$$(kubectl get secret --namespace $(NAMESPACE) --no-headers \
+		-o custom-columns=NAME:.metadata.name 2>/dev/null \
+		| grep -E '(^|-)autoscaler-api-token$$' | head -1); \
+	if [ -z "$$secret" ]; then \
+		echo "no *autoscaler-api-token Secret in $(NAMESPACE) -- is the platform installed?"; \
+		exit 1; \
+	fi; \
+	echo "using token Secret: $$secret"; \
+	sed "s/name: autoscaler-api-token/name: $$secret/" e2e/job.yaml | kubectl apply -f -
 	@echo
 	@kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=platform-e2e \
 		--namespace $(NAMESPACE) --timeout=120s >/dev/null 2>&1 || true

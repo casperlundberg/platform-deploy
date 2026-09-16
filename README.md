@@ -56,7 +56,15 @@ manifests to read. Real deployment goes through the infra repo.
 | [`docs/requirements.md`](docs/requirements.md) | What the platform needs: resources, constraints, ports, RBAC, credentials. |
 | [`docs/infra-handover.md`](docs/infra-handover.md) | The checklist for the infra repo, with the decisions it has to make. |
 | [`verify.sh`](verify.sh) | Runs the whole platform locally and checks it does what it claims. |
+| [`QUICKSTART.md`](QUICKSTART.md) | Deploying your own instance on a laptop cluster. |
 | [`e2e/`](e2e) | The same question asked of the *deployed* system: a Job in the cluster, 43 checks, safe to run beside live data. |
+
+## Deploying your own instance
+
+[`QUICKSTART.md`](QUICKSTART.md) — four `git clone`s and `make install-local`.
+No key generation, no secrets, no DNS: helm returns in under a second and the
+pods are up about a minute later. Verified on a throwaway k3d cluster, then
+checked with `make e2e` (43/43).
 
 ## Quick start
 

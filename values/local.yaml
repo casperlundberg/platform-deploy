@@ -10,7 +10,19 @@ storage:
   # this true.
   requireLonghorn: false
 
+# Every service takes the moving "main" tag here, and that is the opposite of
+# what vikingvault does. The reason they differ: ArgoCD deploys by noticing the
+# manifest changed, and a manifest naming "main" never changes, so a GitOps
+# deploy must pin a sha. `helm install` has no such problem -- it pulls
+# whatever "main" points at, today, which is what someone trying the system out
+# wants. Leaving it unset is the one thing that does not work: the chart falls
+# back to appVersion 0.1.0, which nothing has ever published, and every pod
+# sits in ImagePullBackOff.
 autoscaler:
+  image:
+    tag: "main"
+    # main moves, so a cached copy from last week is not the one meant.
+    pullPolicy: Always
   auth:
     # Fine here and nowhere else.
     token: "local-development-token"
@@ -26,6 +38,9 @@ autoscaler:
     limits: { memory: 256Mi }
 
 simlab-api:
+  image:
+    tag: "main"
+    pullPolicy: Always
   autoscaler:
     token: "local-development-token"
   database:
@@ -38,6 +53,9 @@ simlab-api:
     limits: { memory: 512Mi }
 
 simlab-web:
+  image:
+    tag: "main"
+    pullPolicy: Always
   ingress:
     # Reach it with a port-forward instead:
     #   kubectl -n autoscale-platform port-forward svc/platform-simlab-web 8080:8080
