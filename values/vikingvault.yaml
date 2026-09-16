@@ -52,6 +52,12 @@ simlab-api:
   image:
     pullPolicy: IfNotPresent
 
+  # The token callers must present to Simlab's own API -- the browser
+  # included. Required because the Ingress publishes this API, not just
+  # the browser app; see item 5a in docs/infra-handover.md.
+  auth:
+    existingSecret: simlab-api-token
+
   autoscaler:
     existingSecret: autoscaler-api-token
 

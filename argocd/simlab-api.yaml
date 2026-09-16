@@ -38,7 +38,7 @@ spec:
           # ArgoCD sees nothing to sync, and IfNotPresent leaves the running
           # pods on the image they already have. The deploy has to be a
           # change to the tag itself.
-          tag: "sha-01a03f5580fc920db92aa43df1dbcdeb5c79c255"
+          tag: "sha-84e233709631cc04c880c8853066c1b1351f682b"
           pullPolicy: IfNotPresent
         autoscaler:
           # url left unset so the chart resolves http://platform-autoscaler:8080

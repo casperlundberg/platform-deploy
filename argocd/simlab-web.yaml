@@ -38,30 +38,40 @@ spec:
           # ArgoCD sees nothing to sync, and IfNotPresent leaves the running
           # pods on the image they already have. The deploy has to be a
           # change to the tag itself.
-          tag: "sha-197b9794206d748d7b15ecf963e8cb3935040f4e"
+          tag: "sha-2fab0d880c8e3ba406962074353ccc9e88922018"
           pullPolicy: IfNotPresent
         ingress:
           enabled: true
           # nginx is the only class here and is default; stated anyway so a
           # second class appearing later cannot silently take over.
           className: nginx
-          # Reused from the decommissioned mining simulator (commit 1c24492).
-          # That commit only dropped the name from the DDNS refresh list -- it
-          # never deleted the Cloudflare record, which still resolves to the
-          # cluster. Reusing it is what avoids creating a new record at the DNS
-          # provider; there is no wildcard A record on vikingvault.dev, so any
-          # other name would need one.
+          # Named for what it is, rather than for the decommissioned mining
+          # simulator whose record this used to reuse. decay.vikingvault.dev
+          # still exists and still resolves here; nothing points at it now.
           #
-          # The old TLS cert lived in the now-deleted priority-decay-journal
-          # namespace and is not reusable -- cert-manager issues a fresh one
-          # into autoscale-platform below.
-          host: decay.vikingvault.dev
+          # simlab is added to the DDNS updater in the same commit that moved
+          # this line. It has to be: the updater is what keeps a Cloudflare
+          # record pointed at the current external IP, and a name that is not
+          # in its list works until the address changes and then stops, which
+          # is a failure nobody connects to a DNS list they never looked at.
+          #
+          # Unlike decay, this record is proxied -- so requests arrive from
+          # Cloudflare rather than directly. The ingress annotations that keep
+          # the live event stream unbuffered are still set by the chart, but
+          # they only govern our own nginx; anything Cloudflare does to a
+          # long-lived response it does before we see it.
+          host: simlab.vikingvault.dev
           annotations:
             cert-manager.io/cluster-issuer: letsencrypt-prod
           tls:
+            # The Secret keeps its name rather than being renamed to match the
+            # host: cert-manager reissues into it for the new name, where a
+            # rename would leave the old certificate behind with nothing owning
+            # it. Until that reissue lands, Cloudflare answers 526 for this
+            # name, because the origin is still presenting the old certificate.
             - secretName: autoscale-platform-tls
               hosts:
-                - decay.vikingvault.dev
+                - simlab.vikingvault.dev
         # proxy-buffering "off" and proxy-read-timeout 86400 are baked into the
         # chart's ingress template, not set here -- without them live runs look
         # frozen and nothing in the logs says why.
@@ -93,4 +103,4 @@ spec:
 
   info:
     - name: 'Description'
-      value: 'Autoscale platform: simlab-web SPA at decay.vikingvault.dev -- its nginx proxies /api, so one ingress rule covers the whole app and the backend needs no CORS'
+      value: 'Autoscale platform: simlab-web SPA at simlab.vikingvault.dev -- its nginx proxies /api, so one ingress rule covers the whole app and the backend needs no CORS'

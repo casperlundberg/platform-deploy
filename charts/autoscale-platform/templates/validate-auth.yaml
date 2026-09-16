@@ -37,6 +37,24 @@ instructions said to and watching every run fail.
 {{- end }}
 
 {{- /*
+Publishing Simlab without a token on it is the hole this check exists to stop
+reopening. simlab-web's nginx proxies /api straight to simlab-api, so an
+Ingress publishes that API as surely as it publishes the browser app -- and
+simlab-api holds the autoscaler's token and proxies to it, so an open API there
+reaches an authenticated autoscaler and whatever its targets point at.
+
+This was live on a real cluster: an unauthenticated POST to /api/mines from the
+open internet returned 200.
+*/ -}}
+
+{{- $web := index .Values "simlab-web" | default dict -}}
+{{- $ingress := $web.ingress | default dict -}}
+{{- $apiAuth := $api.auth | default dict -}}
+{{- if and $ingress.enabled (not (or $apiAuth.token $apiAuth.existingSecret)) }}
+  {{- fail (printf "\n\nsimlab-web has an Ingress, but simlab-api has no token.\n\nThe Ingress publishes the API as well as the browser app: nginx proxies /api\nstraight to simlab-api. Without a token, anyone who can reach the host can\ncreate and delete runs -- and because simlab-api holds the autoscaler's\ncredential and proxies to it, they reach an authenticated autoscaler too.\n\nSet one:\n\n  --set simlab-api.auth.token=SOMETHING\n\nor point it at a Secret with a \"simlab-api-token\" key:\n\n  simlab-api.auth.existingSecret: my-secret\n\nIf this really is meant to be open, turn the Ingress off and reach it with\nkubectl port-forward instead.\n") }}
+{{- end }}
+
+{{- /*
 The reverse -- a token on the client and none on the autoscaler -- is not an
 error. It is what values/local.yaml used to be before the autoscaler had auth,
 and an unauthenticated autoscaler ignores the header. It is still worth saying

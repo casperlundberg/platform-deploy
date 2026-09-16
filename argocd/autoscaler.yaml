@@ -46,7 +46,7 @@ spec:
           # sees nothing to sync, and IfNotPresent leaves the running pods on
           # the image they already have. The deploy has to be a change to the
           # tag itself.
-          tag: "sha-d02c1162d08bc5ab7ba2288700c4d8252e74bbf8"
+          tag: "sha-755b65f0eb120bcf771476251cabbee92a19e103"
           pullPolicy: IfNotPresent
         auth:
           # sealed-secrets/autoscale-platform/api-token-sealed.yaml.

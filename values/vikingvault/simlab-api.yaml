@@ -18,6 +18,12 @@ image:
   # "Images and tags" in docs/infra-handover.md. The three services do not
   # share a tag; they are separate repositories with separate histories.
 
+# The token callers must present to Simlab's own API -- the browser included.
+# Required because the Ingress publishes this API, not just the browser app;
+# see item 5a in docs/infra-handover.md.
+auth:
+  existingSecret: simlab-api-token
+
 autoscaler:
   # Explicit, because these are three independently synced Applications now.
   #
