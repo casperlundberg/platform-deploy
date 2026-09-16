@@ -241,12 +241,27 @@ every build, and ArgoCD syncs on a manifest diff: it would see nothing to do,
 and with `IfNotPresent` against an unchanged tag the running pods would not
 pull the new image either. The deploy has to be a change to the tag itself.
 
-So the infra repo sets `autoscaler.image.tag`, `simlab-api.image.tag` and
-`simlab-web.image.tag` to the commit it intends to run — by hand, or by
-whatever writes it (an Image Updater watching the `sha-` tags is one way, a
-commit to the infra repo the other; either way what moves is the tag in the
-manifest). Left empty each chart falls back to its `appVersion`, `0.1.0`,
-which nothing publishes and which fails as `ImagePullBackOff`.
+So the infra repo names the exact commit it intends to run. **That is now
+written automatically.** Each service's CI has a `deploy` job that, after its
+image is published, commits the new `sha-` tag into that service's Application
+in this infra repo; ArgoCD picks the commit up on its next reconcile. The
+deploy is therefore an ordinary reviewable commit in the GitOps repo, and
+ArgoCD remains the only thing that writes to Kubernetes.
+
+The job moves one line and refuses to commit anything else — it checks that
+exactly one file changed, that exactly one line changed, and that the changed
+line is a pinned tag. That matters because the credential it runs with is a
+classic PAT, which is broader than this one file: the narrowness is enforced
+by the job, not by the token.
+
+It needs `INFRA_REPO_TOKEN` in each of the three service repositories. Without
+it the job skips and says so rather than failing the build, so builds stay
+green until the token exists — but nothing is deployed.
+
+Left empty each chart falls back to its `appVersion`, `0.1.0`, which nothing
+publishes and which fails as `ImagePullBackOff`. That is not hypothetical: it
+is what the cluster did for 45 hours, because the loop this job closes did not
+exist and nobody had moved the tag by hand.
 
 The three services do not share a tag. They are separate repositories with
 separate histories, so a push to one moves one tag and the other two keep the
