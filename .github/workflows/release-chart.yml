@@ -1,0 +1,64 @@
+name: release-chart
+
+# Publishing is deliberate, not a side effect of merging. The chart version is
+# a single number that installers pin, so pushing on every commit to main would
+# quietly move what `--version 0.1.0` means underneath anyone who had installed
+# it. Run this by hand, or push a tag.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Chart version to publish (default: the version in Chart.yaml)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Package and verify, but do not push'
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags: ['chart-v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform-deploy
+    steps:
+      # The publish script embeds each service chart and stamps it with the
+      # commit its image was built from, so it needs the siblings checked out
+      # the same way lint and template do.
+      - uses: actions/checkout@v4
+        with: { path: platform-deploy }
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/autoscaler, path: autoscaler }
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/simlab-api, path: simlab-api }
+      - uses: actions/checkout@v4
+        with: { repository: casperlundberg/simlab-web, path: simlab-web }
+
+      - uses: azure/setup-helm@v4
+
+      # The script refuses to publish a chart naming an image that is not on
+      # Docker Hub, and refuses a chart directory with uncommitted or unpushed
+      # changes. Both need real git state, which a shallow default checkout has
+      # enough of, plus the upstream ref to compare against.
+      - name: fetch upstream refs for the pushed-commit check
+        run: |
+          for svc in autoscaler simlab-api simlab-web; do
+            git -C "../$svc" fetch --quiet origin
+            git -C "../$svc" branch --quiet --set-upstream-to=origin/main main || true
+          done
+
+      - name: publish
+        env:
+          HELM_REGISTRY_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          # DOCKER_A is the access token that authenticates; see the comment in
+          # each service repo's ci.yml for why the name is opaque.
+          HELM_REGISTRY_PASSWORD: ${{ secrets.DOCKER_A }}
+        run: |
+          args=()
+          if [ -n "${{ inputs.version }}" ]; then args+=(--version "${{ inputs.version }}"); fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then args+=(--dry-run); fi
+          ./scripts/publish-chart.sh "${args[@]}"

@@ -1,37 +1,47 @@
 # Deploying your own instance
 
-No key generation, no secrets to create, no DNS, no certificates. A
-self-contained install brings its own Postgres and its own development token.
-
-Timed on a fresh k3d cluster: **helm returns in under a second, and all four
-pods are Running about 60 seconds later.**
+Everything ships as OCI artifacts on Docker Hub — the chart as well as the
+images — so you need no repository access, no checkout, and nothing built
+locally. No key generation, no secrets to create, no DNS, no certificates.
 
 ## What you need
 
-- A Kubernetes cluster you can `helm install` into — k3d, kind, minikube or
-  Docker Desktop are all fine. It must have a default StorageClass; the ones
-  above all ship exactly one.
-- `helm` 3 and `kubectl`.
-- The four repositories checked out **side by side**. This is the only real
-  friction, and it is because the umbrella chart composes the three service
-  charts through `file://` paths — each service's chart lives with its service
-  so a chart change and the code change needing it land in one commit.
-
-```bash
-mkdir autoscale-platform && cd autoscale-platform
-for r in autoscaler simlab-api simlab-web platform-deploy; do
-  git clone https://github.com/casperlundberg/$r.git
-done
-```
+- A Kubernetes cluster you can install into: k3d, kind, minikube or Docker
+  Desktop are all fine. It needs a default StorageClass; those all ship exactly
+  one.
+- `helm` 3.8 or newer (OCI support) and `kubectl`.
 
 ## Install
 
 ```bash
-cd platform-deploy
-make install-local          # values/local.yaml by default
+TOKEN=$(openssl rand -hex 16)      # or any string; it just has to match below
+
+helm install platform \
+  oci://registry-1.docker.io/cappelumpa/autoscale-platform --version 0.1.0 \
+  --namespace autoscale-platform --create-namespace \
+  --set storage.requireLonghorn=false \
+  --set autoscaler.auth.token="$TOKEN" \
+  --set simlab-api.autoscaler.token="$TOKEN"
 ```
 
-Then watch it come up:
+Timed on a fresh k3d cluster: **helm returns in about half a second, and all
+four pods are Running roughly 70 seconds later.**
+
+Three flags and why each is needed:
+
+| Flag | Why |
+|---|---|
+| `storage.requireLonghorn=false` | The chart refuses a non-Longhorn volume by default, because this project's own cluster has two default StorageClasses and picking the wrong one silently loses data. A laptop cluster has no Longhorn, so the check is waived. |
+| `autoscaler.auth.token` | The autoscaler's API holds other systems' credentials, so the chart ships no default token. Pick any string. |
+| `simlab-api.autoscaler.token` | **The same string.** simlab-api is a client of that API and needs the same credential. |
+
+Those last two are two ends of one credential. Setting one and not the other
+used to produce a system that looked perfectly healthy — four pods Running, the
+UI loading — in which every run failed with a 401 visible only in a log. The
+chart now refuses to render in that state and tells you what to set, but it is
+worth knowing why they are both there.
+
+## Watch it come up
 
 ```bash
 kubectl -n autoscale-platform get pods -w
@@ -40,68 +50,60 @@ kubectl -n autoscale-platform get pods -w
 **`simlab-api` will crash-loop two or three times first.** That is expected and
 resolves itself: it refuses to start without a reachable database, Postgres
 takes a few seconds longer than it does, and Kubernetes restarts it until the
-database answers. The log says exactly that:
+database answers:
 
 ```
 simlab-api: the database is not reachable: failed to connect to
 `user=simlab database=simlab`: connection refused
 ```
 
-Refusing to start is deliberate. A service that came up and failed every run
+Refusing to start is deliberate — a service that came up and failed every run
 instead would be harder to diagnose than one that says why it will not start.
 
 ## Use it
 
-`values/local.yaml` leaves the Ingress off, so nothing is exposed. Reach the
-app with a port-forward:
+Nothing is exposed by default. Reach the app with a port-forward:
 
 ```bash
 kubectl -n autoscale-platform port-forward svc/platform-simlab-web 8080:8080
 ```
 
 Then open <http://localhost:8080>. The SPA proxies `/api` itself, so that one
-port is the whole application.
-
-## Check it actually works
-
-```bash
-make e2e
-```
-
-43 checks against the deployment: CRUD on mines, scenarios, runs and targets,
-and the path where the Simlab backend drives the real autoscaler. It creates
-only its own rows and removes them again, so it is safe to run against an
-instance that has real data in it. See [`e2e/README.md`](e2e/README.md).
+port is the whole application: define a mine, define a scenario, launch a run,
+and watch the autoscaler decide. Every decision carries the reasoning that
+produced it.
 
 ## Uninstall
 
 ```bash
-make uninstall-local
-kubectl delete namespace autoscale-platform     # also drops the volumes
+helm uninstall platform --namespace autoscale-platform
+kubectl delete namespace autoscale-platform      # also drops the volumes
 ```
 
-## What is deliberately different from a real deployment
+## What this install is not
 
-`values/local.yaml` is for a laptop and is **not** a starting point for anything
-real. Three things in it would be wrong anywhere else:
+It is self-contained on purpose, and three of those choices are wrong anywhere
+that outlives a demo:
 
-| | local | why it differs |
-|---|---|---|
-| `auth.token` | a literal in the file | a real install uses `existingSecret`, because a token in a values file is a token in a git history |
-| `image.tag` | `main` | a GitOps deploy must pin `sha-<commit>`: a manifest naming `main` never changes, so ArgoCD sees nothing to sync and the new image is never rolled out |
-| `storage.requireLonghorn` | `false` | waived only because a laptop has no Longhorn; every real environment leaves the check on |
+- **The token is on the command line**, so it is in your shell history. A real
+  deployment points both `autoscaler.auth.existingSecret` and
+  `simlab-api.autoscaler.existingSecret` at one Secret it manages itself.
+- **Postgres comes with it**, one replica, no backups. Point
+  `simlab-api.database.url` at a managed instance instead.
+- **The Longhorn check is off.** It exists because an unset storage class binds
+  to whichever class the cluster happens to default to, and the wrong one
+  silently loses the autoscaler's stored credentials on a reschedule.
 
-For a real deployment, copy `values/vikingvault.yaml` instead and read
-[`docs/infra-handover.md`](docs/infra-handover.md), which lists every decision
-the cluster owns and what each one costs if it is wrong.
+`docs/requirements.md` lists what the platform actually needs, and
+`docs/infra-handover.md` lists every decision a cluster owns, with what each
+costs if it is wrong.
 
-## Without Kubernetes at all
+## Installing a specific build
 
-To see the system work without a cluster:
+`--version` selects the chart. Each published chart pins the exact service
+images it was built from, so a given chart version always deploys the same
+code — there is no floating tag to drift underneath it.
 
 ```bash
-make verify        # needs Docker and Go, takes about a minute
+helm show chart oci://registry-1.docker.io/cappelumpa/autoscale-platform --version 0.1.0
 ```
-
-It builds both services, runs them against a real Postgres, and replays one
-scenario under two policies.

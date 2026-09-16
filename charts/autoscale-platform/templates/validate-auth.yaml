@@ -1,0 +1,48 @@
+{{- /*
+The two sides of the API token have to agree, and nothing else notices when
+they do not.
+
+The autoscaler's token guards its API. simlab-api is a *client* of that API, so
+it needs the same token to call it. Set one and not the other and everything
+looks right: all four pods go Running, the SPA loads, the platform list is
+empty rather than broken, and every run fails at the first call with
+
+    run ended early ... autoscaler /v1/targets returned 401:
+    a bearer token is required
+
+which is only visible in simlab-api's log. That is the worst shape a failure
+can have -- healthy probes, working UI, nothing doing what it is for -- so it
+is refused at render time instead, where the message can say what to set.
+
+The silent version of this was found by installing the chart the way the
+instructions said to and watching every run fail.
+*/ -}}
+
+{{- $auto := .Values.autoscaler | default dict -}}
+{{- $autoAuth := $auto.auth | default dict -}}
+{{- $api := index .Values "simlab-api" | default dict -}}
+{{- $apiAuto := $api.autoscaler | default dict -}}
+
+{{- $autoscalerIsGuarded := or $autoAuth.token $autoAuth.existingSecret -}}
+{{- $clientHasCredential := or $apiAuto.token $apiAuto.existingSecret -}}
+
+{{- if and $autoscalerIsGuarded (not $clientHasCredential) }}
+  {{- fail (printf "\n\nThe autoscaler requires a token, but simlab-api has not been given one.\n\nsimlab-api calls the autoscaler's API, so it needs the same credential. Without\nit the install comes up looking completely healthy and every run fails at its\nfirst call with 401.\n\nSet both sides to the same value:\n\n  --set autoscaler.auth.token=SOMETHING \\\n  --set simlab-api.autoscaler.token=SOMETHING\n\nor, in any environment that outlives a demo, point both at one Secret:\n\n  autoscaler.auth.existingSecret:   my-token\n  simlab-api.autoscaler.existingSecret: my-token\n") }}
+{{- end }}
+
+{{- if and $autoAuth.token $apiAuto.token }}
+  {{- if ne ($autoAuth.token | toString) ($apiAuto.token | toString) }}
+    {{- fail (printf "\n\nautoscaler.auth.token and simlab-api.autoscaler.token are both set, and they\ndiffer.\n\nThey are the two ends of one credential: the autoscaler checks what simlab-api\nsends. Different values fail exactly the same way as a missing one -- healthy\npods, 401 on every run -- so they have to be the same string.\n") }}
+  {{- end }}
+{{- end }}
+
+{{- /*
+The reverse -- a token on the client and none on the autoscaler -- is not an
+error. It is what values/local.yaml used to be before the autoscaler had auth,
+and an unauthenticated autoscaler ignores the header. It is still worth saying
+out loud, because an autoscaler holding other systems' credentials should not
+be open.
+*/ -}}
+{{- if and $clientHasCredential (not $autoscalerIsGuarded) }}
+  {{- fail (printf "\n\nsimlab-api has an autoscaler token but the autoscaler has none, so its API is\nunauthenticated.\n\nThat service holds Kubernetes tokens, ColonyOS private keys and Docker client\ncertificates for whatever it has been pointed at. Leaving its API open is not a\nsmaller decision than getting the token wrong.\n\nSet autoscaler.auth.token (or autoscaler.auth.existingSecret) to match.\n") }}
+{{- end }}
