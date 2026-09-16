@@ -38,7 +38,7 @@ spec:
           # ArgoCD sees nothing to sync, and IfNotPresent leaves the running
           # pods on the image they already have. The deploy has to be a
           # change to the tag itself.
-          tag: "sha-2fab0d880c8e3ba406962074353ccc9e88922018"
+          tag: "sha-d86f7dea8add409dc24b44b557ad47664ade14a5"
           pullPolicy: IfNotPresent
         ingress:
           enabled: true

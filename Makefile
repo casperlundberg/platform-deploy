@@ -1,3 +1,6 @@
+# bash: the argocd check uses process substitution.
+SHELL := /bin/bash
+
 CHART  := charts/autoscale-platform
 VALUES ?= values/local.yaml
 RELEASE ?= platform
@@ -68,6 +71,12 @@ check-values: deps ## Check that values/vikingvault.yaml and values/vikingvault/
 check-argocd: ## Check argocd/ still matches the Applications in the infra repo
 	@# One shell for the whole check: a skip has to stop the rest of the recipe,
 	@# and each recipe line would otherwise run in a shell of its own.
+	@#
+	@# The pinned image tag is normalised away before comparing. Each service's
+	@# deploy job rewrites it in the infra repo on every merge, so including it
+	@# would leave this permanently failing for the one difference that is
+	@# supposed to change constantly -- and a check that is always red is a check
+	@# nobody reads. What is being guarded is structural drift.
 	@if [ ! -d "$(INFRA_APPS)" ]; then \
 		echo "skipped: $(INFRA_APPS) not present (set INFRA=... to check)"; \
 	else \
@@ -76,11 +85,14 @@ check-argocd: ## Check argocd/ still matches the Applications in the infra repo
 			live="$(INFRA_APPS)/autoscale-platform-$$svc.yaml"; \
 			if [ ! -f "$$live" ]; then \
 				echo "missing in the infra repo: $$live"; failed=1; \
-			elif tail -n +7 "argocd/$$svc.yaml" | diff -q - "$$live" >/dev/null; then \
+			elif tail -n +7 "argocd/$$svc.yaml" | sed -E 's/^( *tag: )".*"/\1"<moves>"/' \
+			     | diff -q - <(sed -E 's/^( *tag: )".*"/\1"<moves>"/' "$$live") >/dev/null; then \
 				echo "  argocd/$$svc.yaml matches"; \
 			else \
 				echo "argocd/$$svc.yaml has diverged from $$live:"; \
-				tail -n +7 "argocd/$$svc.yaml" | diff -u - "$$live" | grep '^[+-][^+-]' | head -20; \
+				tail -n +7 "argocd/$$svc.yaml" | sed -E 's/^( *tag: )".*"/\1"<moves>"/' \
+				  | diff -u - <(sed -E 's/^( *tag: )".*"/\1"<moves>"/' "$$live") \
+				  | grep '^[+-][^+-]' | head -20; \
 				failed=1; \
 			fi; \
 		done; \

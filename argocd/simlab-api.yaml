@@ -38,8 +38,22 @@ spec:
           # ArgoCD sees nothing to sync, and IfNotPresent leaves the running
           # pods on the image they already have. The deploy has to be a
           # change to the tag itself.
-          tag: "sha-84e233709631cc04c880c8853066c1b1351f682b"
+          tag: "sha-b66f12714fb9e4a8189058f6b67bb644ff47c9d4"
           pullPolicy: IfNotPresent
+        auth:
+          # The token callers must present to Simlab's own API -- the browser
+          # included, which reads it from the user and sends it as a bearer
+          # token.
+          #
+          # Required because the Ingress publishes this API, not only the
+          # browser app: simlab-web's nginx proxies /api straight here. Without
+          # it an anonymous POST from the internet created rows on this
+          # cluster, and since this service holds the autoscaler's credential
+          # and proxies to it, that reached an authenticated autoscaler.
+          #
+          # sealed-secrets/autoscale-platform/simlab-api-token-sealed.yaml.
+          existingSecret: simlab-api-token
+
         autoscaler:
           # url left unset so the chart resolves http://platform-autoscaler:8080
           # by release name in this namespace.
