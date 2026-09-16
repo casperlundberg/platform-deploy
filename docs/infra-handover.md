@@ -149,39 +149,37 @@ Never leave `ingress.host` empty. The chart renders `host: ""`, which is a rule
 matching every host that reaches the controller — on a cluster running this
 many Applications that is not a harmless default.
 
-**5a. The Simlab API is on the public internet with no authentication —
-decide.** Confirmed against the deployment on 2026-09-16, not inferred:
+**5a. The Simlab API — closed.** It was on the public internet with no
+authentication at all. Confirmed against the deployment, not inferred: an
+unauthenticated `POST /api/mines` returned 200, and so did `GET /api/targets`.
+
+The autoscaler was never the problem. simlab-web's nginx proxies `/api` to
+simlab-api, simlab-api had no authentication of its own, and the Ingress
+published it — and because simlab-api holds the autoscaler's token and proxies
+to it, an anonymous caller reached an authenticated autoscaler and through it
+whatever infrastructure a registered target points at.
+
+simlab-api now requires a bearer token on everything but the probes, the
+browser asks for it and sends it, and the umbrella chart refuses to render an
+Ingress in front of an untokened API — so this cannot be reopened by someone
+who has not read this document. Verified after the change:
 
 ```
-POST https://simlab.vikingvault.dev/api/mines   (no Authorization header)  -> 200
-GET  https://simlab.vikingvault.dev/api/targets (no Authorization header)  -> 200
+POST /api/mines   (no credential) -> 401
+GET  /api/targets (no credential) -> 401
+GET  /healthz                     -> 200
+GET  /            (the SPA)       -> 200
 ```
 
-The autoscaler's own API is properly guarded; this is not that. simlab-web's
-nginx proxies `/api` to simlab-api, simlab-api has no authentication of its own,
-and the Ingress publishes it. So anyone who knows the hostname can create,
-start and delete mines, scenarios and runs.
+Two credentials now exist in this namespace and they are not interchangeable:
+`simlab-api-token` is what callers present to Simlab, `autoscaler-api-token` is
+what simlab-api presents to the autoscaler. `scripts/simlab-env.sh` returns
+both, named for their direction.
 
-The part that makes it more than nuisance: **simlab-api holds the autoscaler
-token and proxies to it.** `/api/targets` is a write endpoint on that path, so
-an anonymous caller reaches an authenticated autoscaler through it. On a
-deployment whose targets are all simulation that costs compute and other
-people's experiments. Point one target at a real Kubernetes namespace or
-ColonyOS colony and the same path reaches real infrastructure.
-
-Three ways to close it, cheapest first:
-
-- **Put authentication in front of the Ingress.** `nginx.ingress.kubernetes.io/auth-*`
-  annotations with a basic-auth Secret, or the cluster's existing
-  `auth-proxy.vikingvault.dev`. Nothing in this project changes.
-- **Take the Ingress off** and reach it with `kubectl port-forward`, as
-  `values/local.yaml` does. Costs the browser being reachable from anywhere.
-- **Give simlab-api its own authentication.** The honest fix, and the only one
-  that survives the Ingress being reconfigured by someone who did not read this,
-  but it is a change to the service rather than to the deployment.
-
-Until one is chosen, treat the hostname as the only thing standing between the
-open internet and a service that can drive an autoscaler.
+One residual: the event streams accept the token in a query string, because
+`EventSource` cannot set headers. It is accepted on GET only, so a URL can
+never authorise a write — but treat any log that records query strings as
+holding credentials.
 
 **6. Single-replica workloads.** autoscaler, simlab-api and Postgres are each
 one replica with `Recreate`. Exempt them from any house template that sets
