@@ -4,32 +4,33 @@
 # repository states the whole deployment contract on its own. Edit the infra
 # repo, then update this. `make check-argocd` fails if the two diverge.
 #
-# The scaling controller. One of three Applications making up autoscale-platform:
-# autoscaler (this), simlab-api, simlab-web — all into the autoscale-platform
-# namespace, all pinned to the Helm release name "platform".
-#
-# The release name is load-bearing, not cosmetic. The charts find each other by
-# it: simlab-api is configured with http://platform-autoscaler:8080, which is
-# this release's Service. Renaming the release here without changing that
-# breaks Simlab at run time, not at sync time.
-#
-# Charts come from the service repositories (public), where they live beside
-# the code they deploy. platform-deploy is the project's own deployment repo
-# and carries the reasoning: docs/infra-handover.md, docs/requirements.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: autoscale-platform-autoscaler
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "0"  # before simlab-api, which calls it
+    # Ordering across Applications, which sync-wave on a resource inside
+    # one chart cannot do. Effective because these are children of the
+    # app-of-apps: before simlab-api, which calls it.
+    argocd.argoproj.io/sync-wave: "0"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
 
+  # The umbrella chart in platform-deploy resolves its three services through
+  # file:// dependencies, which ArgoCD's repo-server cannot follow, and the
+  # repo deliberately gitignores the vendored .tgz copies. Each service chart
+  # is self-contained in its own public repo, so they are deployed as three
+  # Applications instead -- the same shape fishing-planner already uses here.
+  #
+  # releaseName MUST stay "platform" in all three: the charts resolve each
+  # other as {{ .Release.Name }}-autoscaler and {{ .Release.Name }}-simlab-api.
+  # Verified 2026-09-13 -- the three charts rendered separately at this release
+  # name are byte-identical to `make template VALUES=values/vikingvault.yaml`.
   source:
-    repoURL: https://github.com/casperlundberg/autoscaler.git
+    repoURL: https://github.com/casperlundberg/autoscaler
     targetRevision: main
     path: deploy/chart
     helm:
@@ -37,44 +38,41 @@ spec:
       values: |
         image:
           repository: docker.io/cappelumpa/autoscaler
-          # sha-<full commit sha>; the service CI publishes this and a moving
-          # "main" on every push. Deploy the sha: a manifest naming "main"
-          # never changes, so ArgoCD sees nothing to sync and IfNotPresent
-          # leaves the running pods on the old image.
+          # Pinned to the commit CI built. Was unset, which resolves to the
+          # chart's appVersion (0.1.0) — a tag nothing has ever published, so
+          # every pod sat in ImagePullBackOff from the moment it was created.
+          #
+          # Not "main": that tag moves, so the manifest never changes, ArgoCD
+          # sees nothing to sync, and IfNotPresent leaves the running pods on
+          # the image they already have. The deploy has to be a change to the
+          # tag itself.
           tag: "sha-d02c1162d08bc5ab7ba2288700c4d8252e74bbf8"
           pullPolicy: IfNotPresent
-
         auth:
-          # Guards every endpoint but the probes. Without it the service runs
-          # unauthenticated while holding Kubernetes tokens, ColonyOS private
-          # keys and Docker certificates for other systems.
-          # sealed-secrets/autoscale-platform/, key "api-token".
+          # sealed-secrets/autoscale-platform/api-token-sealed.yaml.
+          # Must exist before first sync: unset, the autoscaler runs
+          # unauthenticated while holding other systems' credentials.
           existingSecret: autoscaler-api-token
-
         persistence:
           enabled: true
           size: 1Gi
-          # This is the class the live PVC is already bound to, and a PVC's
-          # storageClassName is immutable — changing it here does not migrate
-          # anything, it makes the sync fail on an immutable field.
-          #
-          # It is arguably the wrong class: the infra repo documents
-          # single-odin as being for "reconstructable / bulk data", and this
-          # volume is every registered target's access keys, which is neither.
-          # Moving it to longhorn-hugin is a volume migration, not an edit —
-          # see item 2 in platform-deploy/docs/infra-handover.md.
+          # Holds targets.json -- Kubernetes tokens, ColonyOS keys, Docker
+          # certs, mode 0600, in the clear. One replica on odin-worker-2/disk-4
+          # with no backup target: losing it costs re-entering each target's
+          # credentials, which is recoverable by hand. No run data here.
           storageClassName: longhorn-single-odin
-
         rbac:
           create: true
-          # Namespaces it may create and scale Deployments in. Empty means its
-          # own only — safe, and probably not what you want once it drives
-          # real workloads. A ClusterRole is deliberately not offered.
+          # Empty = its own namespace only. No ClusterRole is offered by the
+          # chart. Widen this when the autoscaler needs to provision pools
+          # elsewhere; each entry adds one namespace-scoped Role.
           namespaces: []
-
         resources:
-          requests: { cpu: 100m, memory: 128Mi }
-          limits: { memory: 512Mi }
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
 
   destination:
     server: https://kubernetes.default.svc
@@ -87,9 +85,9 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
-      # This service writes Secrets of its own — ColonyOS executor keys that
-      # its pods read. They are not chart-managed, and deleting them
-      # crash-loops every executor.
+      - ServerSideApply=true
+      # The autoscaler writes Secrets of its own (ColonyOS executor keys its
+      # pods read). They are not chart-managed and must survive a sync.
       - ApplyOutOfSyncOnly=true
     retry:
       limit: 5
@@ -100,4 +98,4 @@ spec:
 
   info:
     - name: 'Description'
-      value: 'Autoscale Platform - scaling controller (Go, single replica, Recreate)'
+      value: 'Autoscale platform: autoscaler (Go) -- single replica, Recreate, holds platform credentials on disk'

@@ -34,14 +34,20 @@ ingress:
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-  # The infra repo owns the DNS; this records what it chose, so that
-  # `make template` renders what is actually deployed. Never empty — the chart
-  # renders `host: ""`, a rule matching every host reaching the controller.
-  host: simlab.vikingvault.dev
+  # Records what is deployed; the infra repo owns the DNS. Never empty — the
+  # chart renders `host: ""`, a rule matching every host reaching the
+  # controller.
+  #
+  # decay, not simlab: the Cloudflare record survived the mining simulator's
+  # decommission, and it is in the DDNS updater's refresh list
+  # (manifests/networking/cloudflare-ddns-updater.yaml) where simlab is not.
+  # Moving to simlab means adding it there first, or the name goes stale the
+  # next time the external IP changes.
+  host: decay.vikingvault.dev
   tls:
-    - secretName: simlab-tls
+    - secretName: autoscale-platform-tls
       hosts:
-        - simlab.vikingvault.dev
+        - decay.vikingvault.dev
 
 resources:
   requests: { cpu: 25m, memory: 32Mi }

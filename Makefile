@@ -18,7 +18,7 @@ INFRA_APPS := $(INFRA)/devops/argocd-applications
 
 .PHONY: help
 help: ## Show this help
-	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: deps
@@ -98,6 +98,31 @@ template: deps ## Render the manifests, for reading or diffing
 .PHONY: template-all
 template-all: deps ## Render every environment
 	@for file in values/*.yaml; do $(MAKE) --no-print-directory template VALUES=$$file; done
+
+.PHONY: e2e
+e2e: ## Run the end-to-end check as a Job in the cluster, and tail it
+	@# The script is kept as a file rather than embedded in the Job, so it can
+	@# be read, diffed and compiled on its own; the ConfigMap is rebuilt from it
+	@# on every run so there is no stale copy to be confused by.
+	@kubectl create configmap platform-e2e --namespace $(NAMESPACE) \
+		--from-file=e2e.py=e2e/e2e.py --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl delete job platform-e2e --namespace $(NAMESPACE) --ignore-not-found --wait
+	@kubectl apply -f e2e/job.yaml
+	@echo
+	@kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=platform-e2e \
+		--namespace $(NAMESPACE) --timeout=120s >/dev/null 2>&1 || true
+	@kubectl logs -f job/platform-e2e --namespace $(NAMESPACE) 2>/dev/null || \
+		kubectl logs job/platform-e2e --namespace $(NAMESPACE)
+	@# kubectl logs -f exits 0 whatever the Job did, so the Job's own condition
+	@# is what decides this target's exit code.
+	@kubectl wait --for=condition=complete job/platform-e2e --namespace $(NAMESPACE) --timeout=5s >/dev/null 2>&1 \
+		&& echo "\n✓ e2e passed" \
+		|| { echo "\n✗ e2e failed -- see the checks above"; exit 1; }
+
+.PHONY: e2e-clean
+e2e-clean: ## Remove the e2e Job and its ConfigMap
+	@kubectl delete job platform-e2e --namespace $(NAMESPACE) --ignore-not-found
+	@kubectl delete configmap platform-e2e --namespace $(NAMESPACE) --ignore-not-found
 
 .PHONY: verify
 verify: ## Run the whole platform locally and check it does what it claims

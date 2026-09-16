@@ -4,27 +4,25 @@
 # repository states the whole deployment contract on its own. Edit the infra
 # repo, then update this. `make check-argocd` fails if the two diverge.
 #
-# The Simlab frontend, and the only part of autoscale-platform with an
-# Ingress. See autoscale-platform-autoscaler.yaml for the shape of this
-# three-Application set.
-#
-# The SPA container proxies /api to simlab-api itself, so the browser sees one
-# origin, the API needs no CORS, and no platform credential ever reaches the
-# browser. That is why there is one host here and not two.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: autoscale-platform-simlab-web
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"  # after the API it proxies to
+    # Ordering across Applications, which sync-wave on a resource inside
+    # one chart cannot do. Effective because these are children of the
+    # app-of-apps: after the API it proxies to.
+    argocd.argoproj.io/sync-wave: "2"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
 
+  # See autoscale-platform-autoscaler.yaml for why this is three Applications
+  # rather than the umbrella chart. releaseName must stay "platform".
   source:
-    repoURL: https://github.com/casperlundberg/simlab-web.git
+    repoURL: https://github.com/casperlundberg/simlab-web
     targetRevision: main
     path: deploy/chart
     helm:
@@ -32,30 +30,47 @@ spec:
       values: |
         image:
           repository: docker.io/cappelumpa/simlab-web
+          # Pinned to the commit CI built. Was unset, which resolves to the
+          # chart's appVersion (0.1.0) — a tag nothing has ever published,
+          # so every pod sat in ImagePullBackOff from creation.
+          #
+          # Not "main": that tag moves, so the manifest never changes,
+          # ArgoCD sees nothing to sync, and IfNotPresent leaves the running
+          # pods on the image they already have. The deploy has to be a
+          # change to the tag itself.
           tag: "sha-197b9794206d748d7b15ecf963e8cb3935040f4e"
           pullPolicy: IfNotPresent
-
-        api:
-          # The simlab-api Application's Service, named from its release name.
-          host: platform-simlab-api
-          port: 8081
-
         ingress:
           enabled: true
+          # nginx is the only class here and is default; stated anyway so a
+          # second class appearing later cannot silently take over.
           className: nginx
+          # Reused from the decommissioned mining simulator (commit 1c24492).
+          # That commit only dropped the name from the DDNS refresh list -- it
+          # never deleted the Cloudflare record, which still resolves to the
+          # cluster. Reusing it is what avoids creating a new record at the DNS
+          # provider; there is no wildcard A record on vikingvault.dev, so any
+          # other name would need one.
+          #
+          # The old TLS cert lived in the now-deleted priority-decay-journal
+          # namespace and is not reusable -- cert-manager issues a fresh one
+          # into autoscale-platform below.
+          host: decay.vikingvault.dev
           annotations:
-            cert-manager.io/cluster-issuer: "letsencrypt-prod"
-          # Never leave this empty: the chart renders `host: ""`, which is a
-          # rule matching every host that reaches the ingress controller.
-          host: simlab.vikingvault.dev
+            cert-manager.io/cluster-issuer: letsencrypt-prod
           tls:
-            - secretName: simlab-tls
+            - secretName: autoscale-platform-tls
               hosts:
-                - simlab.vikingvault.dev
-
+                - decay.vikingvault.dev
+        # proxy-buffering "off" and proxy-read-timeout 86400 are baked into the
+        # chart's ingress template, not set here -- without them live runs look
+        # frozen and nothing in the logs says why.
         resources:
-          requests: { cpu: 25m, memory: 32Mi }
-          limits: { memory: 128Mi }
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
 
   destination:
     server: https://kubernetes.default.svc
@@ -68,6 +83,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
     retry:
       limit: 5
       backoff:
@@ -77,4 +93,4 @@ spec:
 
   info:
     - name: 'Description'
-      value: 'Autoscale Platform - Simlab frontend SPA, proxies /api to simlab-api'
+      value: 'Autoscale platform: simlab-web SPA at decay.vikingvault.dev -- its nginx proxies /api, so one ingress rule covers the whole app and the backend needs no CORS'

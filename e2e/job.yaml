@@ -1,0 +1,90 @@
+# End-to-end check of the deployed platform, run from inside the cluster.
+#
+# Deliberately NOT part of the chart and NOT synced by ArgoCD. A Job is a
+# run-once object: under `prune: true` ArgoCD would delete it the moment it
+# finished, and recreate it on the next reconcile, which is neither a test nor
+# a deployment. `make e2e` applies it on demand instead.
+#
+# It is safe to run against the live system beside real data. e2e.py creates
+# only its own rows, mutates nothing it did not create, and unwinds every
+# mutation last-first however the process ends. Read its docstring for what is
+# and is not guaranteed.
+#
+# To run it after every sync instead of on demand, add:
+#   annotations:
+#     argocd.argoproj.io/hook: PostSync
+#     argocd.argoproj.io/hook-delete-policy: HookSucceeded
+# and move this file into the chart. A failing check then fails the sync, which
+# is a bigger decision than it looks -- see e2e/README.md.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: platform-e2e
+  namespace: autoscale-platform
+  labels:
+    app.kubernetes.io/name: platform-e2e
+    app.kubernetes.io/part-of: autoscale-platform
+spec:
+  # No retries. A rerun would pass or fail for its own reasons and the first
+  # result is the one being asked about; `make e2e` reruns it explicitly.
+  backoffLimit: 0
+  # The whole check is seconds of work. This bound is what turns a hung
+  # service into a failed Job rather than a pod that waits forever.
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: platform-e2e
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        # Numeric, for the same reason the services now pin theirs: the
+        # kubelet cannot verify a named user is non-root and refuses the
+        # container outright. 65534 is nobody, which exists in Alpine.
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: e2e
+          image: python:3.12-alpine
+          # Stdlib only -- urllib, no curl, no jq, no pip install at runtime.
+          # A test that has to reach the network before it can start testing
+          # fails for reasons that have nothing to do with the system.
+          command: ["python3", "/test/e2e.py"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: SIMLAB_URL
+              value: http://platform-simlab-api:8081
+            - name: AUTOSCALER_URL
+              value: http://platform-autoscaler:8080
+            - name: AUTOSCALER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: autoscaler-api-token
+                  key: api-token
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: test
+              mountPath: /test
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      volumes:
+        - name: test
+          configMap:
+            name: platform-e2e
+        - name: tmp
+          emptyDir: {}

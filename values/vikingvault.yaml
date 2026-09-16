@@ -79,11 +79,12 @@ simlab-web:
       cert-manager.io/cluster-issuer: letsencrypt-prod
     # Recorded, not decided, here — the infra repo owns the DNS. Never empty:
     # the chart renders `host: ""`, which matches every host on the controller.
-    host: simlab.vikingvault.dev
+    # decay rather than simlab because only decay is in the DDNS refresh list.
+    host: decay.vikingvault.dev
     tls:
-      - secretName: simlab-tls
+      - secretName: autoscale-platform-tls
         hosts:
-          - simlab.vikingvault.dev
+          - decay.vikingvault.dev
 
   resources:
     requests: { cpu: 25m, memory: 32Mi }

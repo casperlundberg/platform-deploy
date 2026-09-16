@@ -56,6 +56,7 @@ manifests to read. Real deployment goes through the infra repo.
 | [`docs/requirements.md`](docs/requirements.md) | What the platform needs: resources, constraints, ports, RBAC, credentials. |
 | [`docs/infra-handover.md`](docs/infra-handover.md) | The checklist for the infra repo, with the decisions it has to make. |
 | [`verify.sh`](verify.sh) | Runs the whole platform locally and checks it does what it claims. |
+| [`e2e/`](e2e) | The same question asked of the *deployed* system: a Job in the cluster, 43 checks, safe to run beside live data. |
 
 ## Quick start
 
@@ -64,6 +65,7 @@ make verify      # build both services, run them for real, check the result
 make lint        # lint the umbrella chart
 make check-values # the two statements of the vikingvault config still agree
 make check-argocd # argocd/ still matches the live Applications
+make e2e         # check the deployed system from inside the cluster
 make template    # render the manifests for reading or diffing
 ```
 

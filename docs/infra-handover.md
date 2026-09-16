@@ -125,20 +125,20 @@ Deployed at the time of writing (2026-09-14), each the tip of its `main`:
 | simlab-api | `sha-01a03f5580fc920db92aa43df1dbcdeb5c79c255` |
 | simlab-web | `sha-197b9794206d748d7b15ecf963e8cb3935040f4e` |
 
-**5. Ingress — `simlab.vikingvault.dev`.** One rule, `/` to simlab-web, which
+**5. Ingress — `decay.vikingvault.dev`.** One rule, `/` to simlab-web, which
 proxies `/api` to simlab-api itself. One host and not two: the browser sees a
 single origin, the API needs no CORS, and no platform credential ever reaches
 the browser. `nginx` is the only class and is default; TLS via the
-`letsencrypt-prod` cluster issuer into `simlab-tls`, matching the other
-Applications.
+`letsencrypt-prod` cluster issuer into `autoscale-platform-tls`.
 
-This replaces `decay.vikingvault.dev`, which is what went live on 2026-09-14.
-`simlab.vikingvault.dev` resolves to the same Cloudflare addresses as every
-other app on this cluster, where `decay` resolved straight to the apex A
-record; the new name is the one that matches how the others are reached.
-Switching leaves the old `autoscale-platform-tls` Secret behind — cert-manager
-created it, so no Application prunes it, and it can be deleted by hand once the
-new certificate is Ready.
+The name is reused from the decommissioned mining simulator: that Cloudflare
+record was never deleted and still resolves to the cluster. **It is also the
+one in the DDNS updater's refresh list**
+(`manifests/networking/cloudflare-ddns-updater.yaml`), which is the reason to
+keep it. `simlab.vikingvault.dev` resolves too, and resolves the way the other
+apps do — to Cloudflare's addresses rather than straight to the apex A record —
+but it is *not* in that list, so it would go stale the next time the external
+IP changed. Moving to it means adding one line there first.
 
 Two annotations are load-bearing and the chart sets them itself:
 `proxy-buffering: "off"` and `proxy-read-timeout: "86400"`. Without them the

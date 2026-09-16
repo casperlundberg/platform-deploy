@@ -4,22 +4,25 @@
 # repository states the whole deployment contract on its own. Edit the infra
 # repo, then update this. `make check-argocd` fails if the two diverge.
 #
-# The Simlab backend. See autoscale-platform-autoscaler.yaml for the shape of
-# this three-Application set and why the release name is pinned.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: autoscale-platform-simlab-api
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"  # after the autoscaler it calls
+    # Ordering across Applications, which sync-wave on a resource inside
+    # one chart cannot do. Effective because these are children of the
+    # app-of-apps: after the autoscaler it calls.
+    argocd.argoproj.io/sync-wave: "1"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
 
+  # See autoscale-platform-autoscaler.yaml for why this is three Applications
+  # rather than the umbrella chart. releaseName must stay "platform".
   source:
-    repoURL: https://github.com/casperlundberg/simlab-api.git
+    repoURL: https://github.com/casperlundberg/simlab-api
     targetRevision: main
     path: deploy/chart
     helm:
@@ -27,34 +30,38 @@ spec:
       values: |
         image:
           repository: docker.io/cappelumpa/simlab-api
-          # The three services do not share a tag — separate repositories,
-          # separate histories. See autoscale-platform-autoscaler.yaml for why
-          # the sha and not "main".
+          # Pinned to the commit CI built. Was unset, which resolves to the
+          # chart's appVersion (0.1.0) — a tag nothing has ever published,
+          # so every pod sat in ImagePullBackOff from creation.
+          #
+          # Not "main": that tag moves, so the manifest never changes,
+          # ArgoCD sees nothing to sync, and IfNotPresent leaves the running
+          # pods on the image they already have. The deploy has to be a
+          # change to the tag itself.
           tag: "sha-01a03f5580fc920db92aa43df1dbcdeb5c79c255"
           pullPolicy: IfNotPresent
-
         autoscaler:
-          # The autoscaler Application's Service, which is named from its
-          # release name ("platform"), not from its Application name. The
-          # chart would default this to the same string; it is written out so
-          # that a release rename breaks here, in a file that names it.
-          url: http://platform-autoscaler:8080
-          # The same Secret the autoscaler reads — this is the caller's copy
-          # of the token guarding that API.
+          # url left unset so the chart resolves http://platform-autoscaler:8080
+          # by release name in this namespace.
           existingSecret: autoscaler-api-token
-
         database:
           embedded:
             enabled: true
             storage: 8Gi
-            # The class the live PVC is bound to; immutable, so this must
-            # match it. Comfortably right either way: this holds the record of
-            # past runs, and hugin is the 3-replica pool.
+            # longhorn-hugin (3 replicas across hugin-worker, odin-worker-1,
+            # thor-worker), not longhorn-single-odin as the app repo's values
+            # prefer. This volume holds the record of past runs, which is the
+            # one thing here that cannot be re-entered by hand -- scenarios
+            # carry seeds, so runs stay reproducible, but the record does not
+            # come back. There is still no Longhorn backup target configured,
+            # so replication is the only durability this has.
             storageClassName: longhorn-hugin
-
         resources:
-          requests: { cpu: 200m, memory: 256Mi }
-          limits: { memory: 1Gi }
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
 
   destination:
     server: https://kubernetes.default.svc
@@ -67,6 +74,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
     retry:
       limit: 5
       backoff:
@@ -76,4 +84,4 @@ spec:
 
   info:
     - name: 'Description'
-      value: 'Autoscale Platform - Simlab backend, workload replay + results (Go + Postgres)'
+      value: 'Autoscale platform: simlab-api (Go) + embedded Postgres -- both single replica, Recreate; a run lives in the memory of the process that started it'
