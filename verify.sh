@@ -79,7 +79,9 @@ if [[ -z "${POSTGRES_URL:-}" ]]; then
   OWN_POSTGRES=1
   POSTGRES_URL="postgres://simlab:simlab@127.0.0.1:15433/simlab_verify?sslmode=disable"
   for _ in $(seq 1 120); do
-    docker exec "$PG_CONTAINER" pg_isready -U simlab >/dev/null 2>&1 && break
+    # Over TCP: the socket answers during initdb's temporary server, before the
+    # restart that would reset a client connecting then.
+    docker exec "$PG_CONTAINER" pg_isready -U simlab -h 127.0.0.1 >/dev/null 2>&1 && break
     sleep 0.5
   done
   ok "Postgres is up"
