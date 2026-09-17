@@ -173,14 +173,16 @@ metric() {
 
 log "Replaying the same workload under two policies"
 
+# Intent off in both: this compares two scaling policies on identical work, and
+# intent reordering the queue would be a third thing varying.
 CAPPED=$(start_run '{"name":"On-premise only","mode":"simulation","scenario_id":"rock-burst",
-  "decision_interval_seconds":15,"time_compression":500000,
+  "decision_interval_seconds":15,"time_compression":500000,"intent":{"mode":"off"},
   "settings":{"local_executor_cap":12,"cloud_executor_cap":0,"local_coldstart_seconds":60}}')
 await_run "$CAPPED"
 ok "on-premise-only run finished"
 
 ELASTIC=$(start_run '{"name":"With cloud burst","mode":"simulation","scenario_id":"rock-burst",
-  "decision_interval_seconds":15,"time_compression":500000,
+  "decision_interval_seconds":15,"time_compression":500000,"intent":{"mode":"off"},
   "settings":{"local_executor_cap":12,"cloud_executor_cap":60,"local_coldstart_seconds":60,"cloud_coldstart_seconds":180}}')
 await_run "$ELASTIC"
 ok "cloud-burst run finished"
@@ -225,6 +227,17 @@ COUNTS=$(echo "$REASONED" | head -1)
   || fail "only $COUNTS scaling decisions carried the engine's reasoning"
 ok "every one of ${COUNTS##*/} scaling decisions carries the engine's own reasoning"
 printf '      %s\n' "$(echo "$REASONED" | tail -1)"
+
+# The intent a run was given is recorded with the cycle it took effect from, or
+# a run whose intent changed could not be reproduced.
+INTENT=$(curl -sf "$API/api/runs/$CAPPED/intent" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+first = d["changes"][0] if d["changes"] else {}
+print(d["settings"]["mode"], d["version"], first.get("cycle"), first.get("source"))')
+[[ "$INTENT" == "off 1 1 initial" ]] \
+  || fail "the run's intent was not recorded as given: $INTENT"
+ok "each run records the intent it was given, in force from its first cycle"
 
 # A run that left its ephemeral target behind would accumulate silently.
 REMAINING=$(curl -sf -H "Authorization: Bearer $TOKEN" \
